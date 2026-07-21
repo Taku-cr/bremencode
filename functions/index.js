@@ -1,8 +1,9 @@
-const { onCall }                        = require("firebase-functions/v2/https");
+const { onCall, onRequest }             = require("firebase-functions/v2/https");
 const { setGlobalOptions }              = require("firebase-functions/v2");
 const admin                             = require("firebase-admin");
 const { analyzeReceiptImage, analyzeInvoiceImage } = require("./receiptAnalyzer");
 const { getWeatherByCoords, getWeatherByCity } = require("./weatherService");
+const { handleLineWebhook }             = require("./lineWebhook");
 
 admin.initializeApp();
 setGlobalOptions({ region: "asia-northeast1" });
@@ -105,3 +106,9 @@ exports.getMonthlyReport = onCall(async (request) => {
     byWeather
   };
 });
+
+// --------------------------------------------------------
+// lineWebhook
+//   LINE Developers の「Webhook URL」に設定するエンドポイント
+// --------------------------------------------------------
+exports.lineWebhook = onRequest(handleLineWebhook);
