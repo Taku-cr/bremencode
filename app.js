@@ -1,13 +1,14 @@
 // ============================================================
-// Firebase 設定 — Firebase Console の値に書き換えてください
+// Firebase 設定
 // ============================================================
 const firebaseConfig = {
-  apiKey:            "demo-key",
-  authDomain:        "demo-bremen.firebaseapp.com",
-  projectId:         "demo-bremen",
-  storageBucket:     "demo-bremen.appspot.com",
-  messagingSenderId: "000000000000",
-  appId:             "1:000000000000:web:demo000000"
+  apiKey:            "AIzaSyAPrdoknyJJOAb9Xsfhi4kYUQ5dK6j60eM",
+  authDomain:        "bremen-ae259.firebaseapp.com",
+  projectId:         "bremen-ae259",
+  storageBucket:     "bremen-ae259.firebasestorage.app",
+  messagingSenderId: "867111275901",
+  appId:             "1:867111275901:web:00ecc2dc7a9f52bd115014",
+  measurementId:     "G-8H8TL2XQ9P"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -17,12 +18,16 @@ const db        = firebase.firestore();
 const storage   = firebase.storage();
 const functions = firebase.app().functions("asia-northeast1");
 
-// ローカルエミュレーターに接続（同一LAN上のスマホからもアクセスできるよう動的ホスト名を使用）
+// Firebase Hosting の本番ドメイン以外（localhost・同一LAN上のIPなど）で開いた場合のみローカルエミュレーターに接続する
+const PROD_HOSTS = ["bremen-ae259.web.app", "bremen-ae259.firebaseapp.com"];
 const EMULATOR_HOST = window.location.hostname;
-auth.useEmulator(`http://${EMULATOR_HOST}:9099`);
-db.useEmulator(EMULATOR_HOST, 8080);
-storage.useEmulator(EMULATOR_HOST, 9199);
-functions.useEmulator(EMULATOR_HOST, 5001);
+const IS_LOCAL = !PROD_HOSTS.includes(EMULATOR_HOST);
+if (IS_LOCAL) {
+  auth.useEmulator(`http://${EMULATOR_HOST}:9099`);
+  db.useEmulator(EMULATOR_HOST, 8080);
+  storage.useEmulator(EMULATOR_HOST, 9199);
+  functions.useEmulator(EMULATOR_HOST, 5001);
+}
 
 // ============================================================
 // 定数
