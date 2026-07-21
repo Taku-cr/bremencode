@@ -63,7 +63,8 @@ let allTxs       = [];
 let currentPage  = 1;
 const PAGE_SIZE  = 20;
 let activeTxId   = null;
-let receiptFiles = [null, null];
+let receiptFiles  = [null, null];
+let receiptRemote = [null, null];
 let weatherData  = null;
 let receiptItems = [];
 let incomeItems  = [];
@@ -142,6 +143,7 @@ function navigate(view) {
   if (view === "budget")       loadBudget();
   if (view === "add-invoice")  initAddInvoice();
   if (view === "invoices")     loadInvoices();
+  if (view === "add-receipt")  loadLineReceipts();
 }
 
 function openSidebar() {
@@ -344,19 +346,74 @@ function handleFile(file, idx) {
 }
 
 function clearSlot(idx) {
-  receiptFiles[idx] = null;
+  receiptFiles[idx]  = null;
+  receiptRemote[idx] = null;
   document.getElementById(`file-input-${idx}`).value = "";
   document.getElementById(`preview-img-${idx}`).classList.add("d-none");
   document.getElementById(`upload-ph-${idx}`).classList.remove("d-none");
-  if (!receiptFiles.some(Boolean)) document.getElementById("btn-analyze").disabled = true;
+  if (!receiptFiles.some(Boolean) && !receiptRemote.some(Boolean)) {
+    document.getElementById("btn-analyze").disabled = true;
+  }
+}
+
+// ============================================================
+// LINEから届いたレシート画像
+// ============================================================
+async function loadLineReceipts() {
+  const panel = document.getElementById("line-receipts-panel");
+  const list  = document.getElementById("line-receipts-list");
+  try {
+    const snap = await db.collection("lineReceipts")
+      .where("userId", "==", currentUser.uid)
+      .where("consumed", "==", false)
+      .orderBy("createdAt", "desc")
+      .get();
+
+    if (snap.empty) { panel.classList.add("d-none"); list.innerHTML = ""; return; }
+
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const thumbs = await Promise.all(items.map(async item => {
+      const url = await storage.ref(item.storagePath).getDownloadURL();
+      return { ...item, url };
+    }));
+
+    list.innerHTML = thumbs.map(item => `
+      <img src="${item.url}" data-id="${esc(item.id)}" data-path="${esc(item.storagePath)}"
+        class="rounded" style="width:64px;height:64px;object-fit:cover;cursor:pointer;"
+        onclick="pickLineReceipt('${item.id}','${esc(item.storagePath)}')" alt="LINEレシート">
+    `).join("");
+    panel.classList.remove("d-none");
+  } catch (e) {
+    console.error("loadLineReceipts:", e);
+    panel.classList.add("d-none");
+  }
+}
+
+function pickLineReceipt(docId, storagePath) {
+  const idx = receiptFiles[0] || receiptRemote[0] ? 1 : 0;
+  receiptFiles[idx]  = null;
+  receiptRemote[idx] = { storagePath, docId };
+
+  document.getElementById(`file-input-${idx}`).value = "";
+  const img = document.getElementById(`preview-img-${idx}`);
+  storage.ref(storagePath).getDownloadURL().then(url => { img.src = url; });
+  img.classList.remove("d-none");
+  document.getElementById(`upload-ph-${idx}`).classList.add("d-none");
+  document.getElementById("btn-analyze").disabled = false;
+
+  db.collection("lineReceipts").doc(docId).delete().catch(() => {});
+  document.querySelector(`#line-receipts-list img[data-id="${docId}"]`)?.remove();
+  if (!document.getElementById("line-receipts-list").children.length) {
+    document.getElementById("line-receipts-panel").classList.add("d-none");
+  }
 }
 
 // ============================================================
 // AI 解析
 // ============================================================
 document.getElementById("btn-analyze").addEventListener("click", async () => {
-  const files = receiptFiles.filter(Boolean);
-  if (!files.length) return;
+  const slots = [0, 1].filter(i => receiptFiles[i] || receiptRemote[i]);
+  if (!slots.length) return;
 
   const progress = document.getElementById("analyze-progress");
   const status   = document.getElementById("analyze-status");
@@ -367,12 +424,18 @@ document.getElementById("btn-analyze").addEventListener("click", async () => {
     status.textContent = "画像をアップロード中...";
     const imageUrls    = [];
     const storagePaths = [];
-    for (const file of files) {
-      const path = `receipts/${currentUser.uid}/${Date.now()}_${file.name}`;
-      const ref  = storage.ref(path);
-      await ref.put(file);
-      imageUrls.push(await ref.getDownloadURL());
-      storagePaths.push(path);
+    for (const i of slots) {
+      if (receiptFiles[i]) {
+        const path = `receipts/${currentUser.uid}/${Date.now()}_${receiptFiles[i].name}`;
+        const ref  = storage.ref(path);
+        await ref.put(receiptFiles[i]);
+        imageUrls.push(await ref.getDownloadURL());
+        storagePaths.push(path);
+      } else {
+        const path = receiptRemote[i].storagePath;
+        imageUrls.push(await storage.ref(path).getDownloadURL());
+        storagePaths.push(path);
+      }
     }
 
     status.textContent = "AI で解析中...";
@@ -629,12 +692,17 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
 
   try {
     let imageUrl = null, storagePath = null;
-    const firstFile = receiptFiles.find(Boolean);
-    if (firstFile) {
-      storagePath = `receipts/${currentUser.uid}/${Date.now()}_${firstFile.name}`;
-      const ref   = storage.ref(storagePath);
-      await ref.put(firstFile);
-      imageUrl = await ref.getDownloadURL();
+    const firstIdx = [0, 1].find(i => receiptFiles[i] || receiptRemote[i]);
+    if (firstIdx !== undefined) {
+      if (receiptFiles[firstIdx]) {
+        storagePath = `receipts/${currentUser.uid}/${Date.now()}_${receiptFiles[firstIdx].name}`;
+        const ref   = storage.ref(storagePath);
+        await ref.put(receiptFiles[firstIdx]);
+        imageUrl = await ref.getDownloadURL();
+      } else {
+        storagePath = receiptRemote[firstIdx].storagePath;
+        imageUrl = await storage.ref(storagePath).getDownloadURL();
+      }
     }
 
     const tx = {

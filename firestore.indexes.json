@@ -25,6 +25,15 @@
         { "fieldPath": "payment.method", "order": "ASCENDING" },
         { "fieldPath": "receiptDate", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "lineReceipts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "consumed",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

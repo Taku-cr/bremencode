@@ -29,5 +29,10 @@ service cloud.firestore {
       allow read, delete: if isAuth() && isOwner(resource.data.userId);
       allow create:       if isAuth() && isOwner(request.resource.data.userId);
     }
+
+    // lineReceipts: LINEから届いたレシート画像の受信箱（作成はCloud Functionsのみ）
+    match /lineReceipts/{docId} {
+      allow read, update, delete: if isAuth() && isOwner(resource.data.userId);
+    }
   }
 }

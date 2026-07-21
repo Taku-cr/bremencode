@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    // receipts: 本人のみ読み書き
+    match /receipts/{uid}/{fileName} {
+      allow read, write: if isAuth() && isOwner(uid);
+    }
+  }
+}

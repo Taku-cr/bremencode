@@ -116,6 +116,18 @@
       }
     },
 
+    "LineReceipt": {
+      "type": "object",
+      "description": "Firestore コレクション: lineReceipts/{docId}（LINEで送信されたレシート画像の受信箱、Cloud Functionsが作成）",
+      "required": ["userId", "storagePath", "consumed", "createdAt"],
+      "properties": {
+        "userId":      { "type": "string", "description": "Firebase Auth UID" },
+        "storagePath": { "type": "string", "description": "Storage 内パス（receipts/{uid}/...）" },
+        "consumed":    { "type": "boolean", "description": "アプリの取引フォームで選択済みか" },
+        "createdAt":   { "description": "Firestore Timestamp" }
+      }
+    },
+
     "AnalyzeReceiptRequest": {
       "type": "object",
       "description": "Cloud Functions: analyzeReceipt への入力",
