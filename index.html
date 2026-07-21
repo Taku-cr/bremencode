@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bremen — レシート帳簿</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1a237e;
+      --primary-light: #3949ab;
+      --sidebar-w: 240px;
+      --bg: #f0f2f5;
+    }
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+      background: var(--bg);
+    }
+    /* Loading */
+    #loading-screen {
+      position: fixed; inset: 0;
+      background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+    }
+    /* Login */
+    #login-screen {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #1a237e 0%, #3949ab 50%, #5c6bc0 100%);
+    }
+    /* Sidebar */
+    #sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      background: #1a237e; color: #fff;
+      z-index: 1030; display: flex; flex-direction: column;
+      transition: transform .3s;
+    }
+    #sidebar .nav-link {
+      color: rgba(255,255,255,.7);
+      padding: 11px 16px; border-radius: 8px; margin: 2px 8px;
+      transition: all .2s; font-size: .9rem;
+    }
+    #sidebar .nav-link:hover,
+    #sidebar .nav-link.active {
+      color: #fff; background: rgba(255,255,255,.15);
+    }
+    #sidebar .nav-link i { width: 20px; margin-right: 8px; }
+    /* Main */
+    #main-content { margin-left: var(--sidebar-w); min-height: 100vh; padding: 24px; }
+    /* Cards */
+    .card-stat {
+      background: #fff; border-radius: 12px; padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    }
+    .card-weather {
+      background: linear-gradient(135deg,#1565c0,#1e88e5);
+      color: #fff; border-radius: 12px; padding: 20px;
+    }
+    /* Upload */
+    .upload-slot {
+      border: 2px dashed #90caf9; border-radius: 12px;
+      padding: 20px; text-align: center; cursor: pointer;
+      transition: all .2s; background: #fff; min-height: 130px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .upload-slot:hover, .upload-slot.dragover { border-color: #1a237e; background: #e8eaf6; }
+    .upload-slot img { max-height: 120px; object-fit: contain; }
+    /* Table */
+    .tx-row:hover { background: #f5f5f5; cursor: pointer; }
+    .badge-weather {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .78rem; padding: 2px 8px; border-radius: 12px;
+      background: #e3f2fd; color: #1565c0;
+    }
+    .badge-cat {
+      display: inline-block; padding: 2px 10px;
+      border-radius: 12px; font-size: .78rem; font-weight: 500;
+    }
+    /* Budget */
+    .budget-progress .progress { height: 8px; border-radius: 4px; }
+    .text-over { color: #c62828; }
+    /* Views */
+    .view { display: none; }
+    .view.active { display: block; }
+    @media (max-width: 768px) {
+      #sidebar { transform: translateX(-100%); transition: transform .25s ease; }
+      #sidebar.open { transform: translateX(0); }
+      #main-content { margin-left: 0; }
+    }
+    #sidebar-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1029;
+    }
+    #sidebar-overlay.show { display: block; }
+    #btn-close-sidebar {
+      position: absolute; top: 10px; right: 10px;
+      color: rgba(255,255,255,.7); background: none; border: none;
+      font-size: 1.2rem; line-height: 1; padding: 4px 8px; cursor: pointer;
+    }
+    #btn-close-sidebar:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading-screen">
+  <div class="text-center">
+    <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem;"></div>
+    <div class="text-muted">読み込み中...</div>
+  </div>
+</div>
+
+<!-- Login -->
+<div id="login-screen" style="display:none;">
+  <div class="card shadow-lg" style="width:400px;border-radius:16px;">
+    <div class="card-body p-5">
+      <div class="text-center mb-4">
+        <div class="h3 fw-bold text-primary mb-1">
+          <i class="fa-solid fa-receipt me-2"></i>Bremen
+        </div>
+        <div class="text-muted small">レシート帳簿・気象連携</div>
+      </div>
+      <button id="btn-google-login" class="btn btn-outline-secondary w-100 py-3 d-flex align-items-center justify-content-center gap-2">
+        <img src="https://www.google.com/favicon.ico" width="18" alt="G">
+        Google でログイン
+      </button>
+      <div id="login-error" class="alert alert-danger mt-3 small d-none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="main-app" style="display:none;">
+
+  <!-- Sidebar overlay (mobile) -->
+  <div id="sidebar-overlay"></div>
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <button id="btn-close-sidebar" class="d-md-none" aria-label="閉じる">✕</button>
+    <div class="p-3 pb-2">
+      <div class="h5 fw-bold text-white mb-0">
+        <i class="fa-solid fa-receipt me-2"></i>Bremen
+      </div>
+      <small class="text-white-50">レシート帳簿</small>
+    </div>
+    <hr class="border-white-50 mx-3 my-1">
+    <ul class="nav flex-column px-2 flex-grow-1">
+      <li><a href="#" class="nav-link active" data-view="dashboard"><i class="fa-solid fa-chart-line"></i>ダッシュボード</a></li>
+      <li><a href="#" class="nav-link" data-view="add-receipt"><i class="fa-solid fa-plus-circle"></i>レシート追加</a></li>
+      <li><a href="#" class="nav-link" data-view="transactions"><i class="fa-solid fa-list"></i>取引一覧</a></li>
+      <li><a href="#" class="nav-link" data-view="add-invoice"><i class="fa-solid fa-plus-circle"></i>請求書追加</a></li>
+      <li><a href="#" class="nav-link" data-view="invoices"><i class="fa-solid fa-file-invoice-dollar"></i>請求一覧</a></li>
+      <li><a href="#" class="nav-link" data-view="budget"><i class="fa-solid fa-piggy-bank"></i>予算管理</a></li>
+      <li><a href="#" class="nav-link" data-view="settings"><i class="fa-solid fa-gear"></i>設定</a></li>
+    </ul>
+    <div class="p-3 border-top border-white-50">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <img id="user-avatar" src="" alt="" class="rounded-circle" width="30" height="30">
+        <div class="small text-white text-truncate" id="user-name" style="max-width:160px;"></div>
+      </div>
+      <button id="btn-logout" class="btn btn-sm btn-outline-light w-100">
+        <i class="fa-solid fa-right-from-bracket me-1"></i>ログアウト
+      </button>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main id="main-content">
+    <div class="d-flex align-items-center mb-4">
+      <button class="btn btn-link d-md-none me-2 p-0" id="btn-toggle-sidebar">
+        <i class="fa-solid fa-bars fs-5"></i>
+      </button>
+      <h4 id="page-title" class="mb-0 fw-bold"></h4>
+      <span class="ms-auto badge bg-primary" id="badge-month"></span>
+    </div>
+
+    <!-- ── DASHBOARD ── -->
+    <section id="view-dashboard" class="view">
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-md-3">
+          <div class="card-stat">
+            <div class="text-muted small">今月の支出</div>
+            <div class="h3 fw-bold text-primary mt-1 mb-0" id="d-total">¥0</div>
+            <div class="small text-muted mt-1" id="d-total-sub"></div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card-stat">
+            <div class="text-muted small">取引件数</div>
+            <div class="h3 fw-bold mt-1 mb-0" id="d-count">0件</div>
+            <div class="small text-muted mt-1">今月</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card-stat">
+            <div class="text-muted small">予算残高</div>
+            <div class="h3 fw-bold mt-1 mb-0" id="d-remain">--</div>
+            <div class="small text-muted mt-1" id="d-remain-sub">今月設定額より</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="card-weather">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="small opacity-75">現在の天気</div>
+                <div class="h4 fw-bold mb-0" id="d-wx-temp">--°C</div>
+                <div class="small" id="d-wx-desc">--</div>
+              </div>
+              <div id="d-wx-icon" class="display-5 lh-1"></div>
+            </div>
+            <div class="small opacity-75 mt-2" id="d-wx-loc"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-7">
+          <div class="card-stat h-100">
+            <div class="fw-bold mb-3">カテゴリ別支出</div>
+            <canvas id="chart-category" height="200"></canvas>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card-stat h-100">
+            <div class="fw-bold mb-3">天気別支出傾向</div>
+            <canvas id="chart-weather" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-stat">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="fw-bold">最近の取引</div>
+          <a href="#" class="btn btn-sm btn-outline-primary" data-view="transactions">すべて表示</a>
+        </div>
+        <div id="d-recent"></div>
+      </div>
+    </section>
+
+    <!-- ── ADD RECEIPT ── -->
+    <section id="view-add-receipt" class="view">
+      <div class="row g-4">
+        <div class="col-md-5">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-camera me-2"></i>レシート画像</h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="upload-slot" id="upload-slot-0" onclick="document.getElementById('file-input-0').click()">
+                  <div id="upload-ph-0">
+                    <i class="fa-solid fa-cloud-arrow-up fa-2x text-muted d-block mb-1"></i>
+                    <div class="text-muted small">画像 1</div>
+                  </div>
+                  <img id="preview-img-0" class="img-fluid rounded d-none" alt="">
+                </div>
+                <input type="file" id="file-input-0" class="d-none" accept="image/*">
+                <button class="btn btn-outline-secondary btn-sm w-100 mt-1" onclick="clearSlot(0)">
+                  <i class="fa-solid fa-xmark me-1"></i>クリア
+                </button>
+              </div>
+              <div class="col-6">
+                <div class="upload-slot" id="upload-slot-1" onclick="document.getElementById('file-input-1').click()">
+                  <div id="upload-ph-1">
+                    <i class="fa-solid fa-cloud-arrow-up fa-2x text-muted d-block mb-1"></i>
+                    <div class="text-muted small">画像 2（任意）</div>
+                  </div>
+                  <img id="preview-img-1" class="img-fluid rounded d-none" alt="">
+                </div>
+                <input type="file" id="file-input-1" class="d-none" accept="image/*">
+                <button class="btn btn-outline-secondary btn-sm w-100 mt-1" onclick="clearSlot(1)">
+                  <i class="fa-solid fa-xmark me-1"></i>クリア
+                </button>
+              </div>
+            </div>
+            <div class="d-grid mt-3">
+              <button class="btn btn-primary" id="btn-analyze" disabled>
+                <i class="fa-solid fa-wand-magic-sparkles me-2"></i>AI で自動解析
+              </button>
+            </div>
+            <div id="analyze-progress" class="mt-3 d-none">
+              <div class="progress mb-1" style="height:6px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+              </div>
+              <div class="small text-center text-muted" id="analyze-status">解析中...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-7">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-pen-to-square me-2"></i>取引情報</h6>
+            <form id="receipt-form">
+              <div class="row g-3">
+                <div class="col-6">
+                  <label class="form-label small fw-bold">取引日 *</label>
+                  <input type="date" class="form-control" id="f-date" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label small fw-bold">カテゴリ</label>
+                  <select class="form-select" id="f-category">
+                    <option value="food">食費</option>
+                    <option value="transport">交通費</option>
+                    <option value="entertainment">娯楽</option>
+                    <option value="health">医療・健康</option>
+                    <option value="clothing">衣類</option>
+                    <option value="household">日用品</option>
+                    <option value="education">教育</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small fw-bold">店舗名</label>
+                  <input type="text" class="form-control" id="f-store" placeholder="例：セブンイレブン">
+                </div>
+
+                <div class="col-12">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label small fw-bold mb-0">明細</label>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item">
+                      <i class="fa-solid fa-plus me-1"></i>追加
+                    </button>
+                  </div>
+                  <div id="items-container"></div>
+                </div>
+
+                <div class="col-6">
+                  <label class="form-label small fw-bold">小計（税抜き合計）</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control bg-light" id="f-subtotal" min="0" placeholder="0" readonly>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <label class="form-label small fw-bold">合計（税込み合計）*</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control bg-light" id="f-total" min="0" placeholder="0" required readonly>
+                  </div>
+                </div>
+
+                <div class="col-3">
+                  <label class="form-label small fw-bold">総点数</label>
+                  <input type="number" class="form-control bg-light" id="f-total-qty" min="0" placeholder="0" readonly>
+                </div>
+                <div class="col-3">
+                  <label class="form-label small fw-bold">取引数</label>
+                  <input type="number" class="form-control bg-light" id="f-tx-count" min="0" placeholder="0" readonly>
+                </div>
+                <div class="col-3">
+                  <label class="form-label small fw-bold">値引き</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control" id="f-discount" min="0" placeholder="0" oninput="recalcTotals()">
+                  </div>
+                </div>
+                <div class="col-3">
+                  <label class="form-label small fw-bold">値引き後の合計</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control bg-light" id="f-final-total" min="0" placeholder="0" readonly>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <label class="form-label small fw-bold">客単価</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control" id="f-customer-unit-price" min="0" placeholder="0">
+                  </div>
+                </div>
+                <div class="col-6">
+                  <label class="form-label small fw-bold">信計売上</label>
+                  <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" class="form-control" id="f-cumulative-sales" min="0" placeholder="0" oninput="updateCashBalance()">
+                  </div>
+                </div>
+
+                <!-- 入金 -->
+                <div class="col-12">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label small fw-bold mb-0"><i class="fa-solid fa-arrow-down me-1 text-success"></i>入金</label>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="addCashRow('income')">
+                      <i class="fa-solid fa-plus me-1"></i>追加
+                    </button>
+                  </div>
+                  <div id="income-container"></div>
+                </div>
+
+                <!-- 出金 -->
+                <div class="col-12">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label small fw-bold mb-0"><i class="fa-solid fa-arrow-up me-1 text-danger"></i>出金</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="addCashRow('expense')">
+                      <i class="fa-solid fa-plus me-1"></i>追加
+                    </button>
+                  </div>
+                  <div id="expense-container"></div>
+                  <div class="d-flex justify-content-end align-items-center mt-2">
+                    <span class="small fw-bold me-2 text-danger">出金合計</span>
+                    <div class="input-group input-group-sm" style="width:160px">
+                      <span class="input-group-text">¥</span>
+                      <input type="number" class="form-control bg-light text-danger fw-bold" id="f-expense-total" readonly placeholder="0">
+                    </div>
+                  </div>
+                  <div class="d-flex justify-content-end align-items-center mt-2">
+                    <span class="small fw-bold me-2 text-primary">現金残高</span>
+                    <div class="input-group input-group-sm" style="width:160px">
+                      <span class="input-group-text">¥</span>
+                      <input type="number" class="form-control bg-light text-primary fw-bold" id="f-cash-balance" readonly placeholder="0">
+                    </div>
+                  </div>
+                </div>
+
+
+                <div class="col-12">
+                  <div class="rounded p-3 bg-light">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <label class="form-label small fw-bold mb-0">
+                        <i class="fa-solid fa-cloud-sun me-1"></i>天気情報
+                      </label>
+                      <button type="button" class="btn btn-sm btn-outline-info" id="btn-fetch-weather">
+                        <i class="fa-solid fa-location-dot me-1"></i>現在地を取得
+                      </button>
+                    </div>
+                    <div id="weather-display" class="d-none">
+                      <div class="d-flex align-items-center gap-3">
+                        <span id="f-wx-icon" class="fs-3"></span>
+                        <div>
+                          <div class="fw-bold" id="f-wx-temp"></div>
+                          <div class="small text-muted" id="f-wx-desc"></div>
+                        </div>
+                        <div class="ms-auto small text-muted">
+                          <div>湿度: <span id="f-wx-hum"></span></div>
+                          <div>風速: <span id="f-wx-wind"></span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label small fw-bold">メモ</label>
+                  <textarea class="form-control" id="f-notes" rows="2" placeholder="任意のメモ"></textarea>
+                </div>
+              </div>
+
+              <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                  <i class="fa-solid fa-floppy-disk me-2"></i>保存
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="btn-clear-form">クリア</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TRANSACTIONS ── -->
+    <section id="view-transactions" class="view">
+      <div class="card-stat mb-4">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label small fw-bold">月</label>
+            <input type="month" class="form-control" id="filter-month">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-bold">カテゴリ</label>
+            <select class="form-select" id="filter-category">
+              <option value="">すべて</option>
+              <option value="food">食費</option>
+              <option value="transport">交通費</option>
+              <option value="entertainment">娯楽</option>
+              <option value="health">医療・健康</option>
+              <option value="clothing">衣類</option>
+              <option value="household">日用品</option>
+              <option value="education">教育</option>
+              <option value="other">その他</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-bold">キーワード</label>
+            <input type="text" class="form-control" id="filter-keyword" placeholder="店舗名・メモで検索">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary w-100" id="btn-filter">
+              <i class="fa-solid fa-magnifying-glass me-1"></i>検索
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-stat">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="fw-bold">取引一覧</div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="text-muted small" id="tx-count-label"></div>
+            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
+              <i class="fa-solid fa-file-excel me-1"></i>Excel売上
+            </button>
+            <button class="btn btn-sm btn-outline-primary" onclick="exportToCashExcel()">
+              <i class="fa-solid fa-file-excel me-1"></i>Excel現金
+            </button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>日付</th><th>店舗</th><th>カテゴリ</th>
+                <th>天気</th><th class="text-end">金額</th><th>支払</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tx-tbody"></tbody>
+          </table>
+        </div>
+        <div id="tx-empty" class="text-center text-muted py-5 d-none">
+          <i class="fa-solid fa-inbox fa-2x mb-2 d-block"></i>取引データがありません
+        </div>
+        <nav class="mt-3"><ul class="pagination justify-content-center mb-0" id="tx-pages"></ul></nav>
+      </div>
+    </section>
+
+    <!-- ── BUDGET ── -->
+    <section id="view-budget" class="view">
+      <div class="row g-4">
+        <div class="col-md-5">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-pen me-2"></i>予算設定</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">対象月</label>
+              <input type="month" class="form-control" id="budget-month">
+            </div>
+            <div id="budget-inputs"></div>
+            <div class="border-top pt-3 mt-3 d-flex justify-content-between fw-bold">
+              <span>合計予算</span>
+              <span id="budget-total-display">¥0</span>
+            </div>
+            <button class="btn btn-primary w-100 mt-3" id="btn-save-budget">
+              <i class="fa-solid fa-floppy-disk me-2"></i>予算を保存
+            </button>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-chart-bar me-2"></i>予算 vs 実績</h6>
+            <div id="budget-progress"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── ADD INVOICE ── -->
+    <section id="view-add-invoice" class="view">
+      <div class="row g-4">
+
+        <!-- 画像アップロード -->
+        <div class="col-md-4">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-camera me-2"></i>請求書画像</h6>
+            <div class="upload-slot" id="inv-upload-slot" onclick="document.getElementById('inv-file-input').click()">
+              <div id="inv-upload-ph">
+                <i class="fa-solid fa-cloud-arrow-up fa-2x text-muted d-block mb-1"></i>
+                <div class="text-muted small">画像をアップロード</div>
+              </div>
+              <img id="inv-preview-img" class="img-fluid rounded d-none" alt="">
+            </div>
+            <input type="file" id="inv-file-input" class="d-none" accept="image/*">
+            <button class="btn btn-outline-secondary btn-sm w-100 mt-2" onclick="clearInvoiceSlot()">
+              <i class="fa-solid fa-xmark me-1"></i>クリア
+            </button>
+            <div class="d-grid mt-3">
+              <button class="btn btn-primary" id="btn-analyze-inv" disabled>
+                <i class="fa-solid fa-wand-magic-sparkles me-2"></i>AI で自動解析
+              </button>
+            </div>
+            <div id="inv-analyze-progress" class="mt-3 d-none">
+              <div class="progress mb-1" style="height:6px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+              </div>
+              <div class="small text-center text-muted" id="inv-analyze-status">解析中...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-8">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-file-invoice me-2"></i>請求書情報</h6>
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <label class="form-label small fw-bold">会社名 *</label>
+                <input type="text" class="form-control" id="inv-company" placeholder="株式会社〇〇">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-bold">日付 *</label>
+                <input type="date" class="form-control" id="inv-date">
+              </div>
+            </div>
+            <div class="fw-bold small mb-2">品目</div>
+            <div class="table-responsive mb-2">
+              <table class="table table-sm mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:130px">商品コード</th>
+                    <th>商品名</th>
+                    <th style="width:80px">数量</th>
+                    <th style="width:110px">単価</th>
+                    <th style="width:120px">金額</th>
+                    <th style="width:36px"></th>
+                  </tr>
+                </thead>
+                <tbody id="inv-items-body"></tbody>
+              </table>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm mb-4" onclick="addInvoiceItem()">
+              <i class="fa-solid fa-plus me-1"></i>行追加
+            </button>
+            <div class="d-flex justify-content-end align-items-center gap-3 pt-3 border-top">
+              <div class="fw-bold fs-5">合計：<span id="inv-total">¥0</span></div>
+              <button class="btn btn-primary" onclick="saveInvoice()">
+                <i class="fa-solid fa-floppy-disk me-2"></i>保存
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── INVOICES ── -->
+    <section id="view-invoices" class="view">
+      <div class="card-stat">
+        <div class="fw-bold mb-3">請求一覧</div>
+        <div id="inv-list-body"></div>
+      </div>
+    </section>
+
+    <!-- ── SETTINGS ── -->
+    <section id="view-settings" class="view">
+      <div class="row g-4">
+        <div class="col-md-6">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-key me-2"></i>API 設定</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">OpenWeatherMap API キー</label>
+              <input type="text" class="form-control" id="s-weather-key" placeholder="APIキーを入力">
+              <div class="form-text">
+                <a href="https://openweathermap.org/api" target="_blank">openweathermap.org</a> で無料取得できます
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">デフォルト都市（英語）</label>
+              <input type="text" class="form-control" id="s-city" placeholder="例：Tokyo">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">通貨</label>
+              <select class="form-select" id="s-currency">
+                <option value="JPY">JPY (¥)</option>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="btn-save-settings">
+              <i class="fa-solid fa-floppy-disk me-2"></i>設定を保存
+            </button>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card-stat">
+            <h6 class="fw-bold mb-3"><i class="fa-solid fa-circle-info me-2"></i>Firebase 設定</h6>
+            <div class="alert alert-info small mb-3">
+              <code>app.js</code> の先頭にある <code>firebaseConfig</code> に
+              Firebase プロジェクトの設定値を入力してください。
+            </div>
+            <div class="mb-0">
+              <label class="form-label small fw-bold">ログイン中のアカウント</label>
+              <div class="p-3 bg-light rounded d-flex align-items-center gap-3">
+                <img id="s-avatar" src="" alt="" class="rounded-circle" width="40" height="40">
+                <div>
+                  <div class="fw-bold" id="s-name"></div>
+                  <div class="small text-muted" id="s-email"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Transaction Detail Modal -->
+<div class="modal fade" id="modal-tx" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">取引詳細</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modal-tx-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger btn-sm" id="btn-delete-tx">
+          <i class="fa-solid fa-trash me-1"></i>削除
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">閉じる</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice Detail Modal -->
+<div class="modal fade" id="modal-inv" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">請求書詳細</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modal-inv-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger btn-sm" id="btn-delete-inv">
+          <i class="fa-solid fa-trash me-1"></i>削除
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">閉じる</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:1100;">
+  <div id="app-toast" class="toast align-items-center border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toast-body"></div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- SheetJS -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- ExcelJS (現金出納帳罫線用) -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<!-- App -->
+<script src="app.js"></script>
+</body>
+</html>

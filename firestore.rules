@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    // transactions: 本人のみ読み書き
+    match /transactions/{txId} {
+      allow read, delete: if isAuth() && isOwner(resource.data.userId);
+      allow create:       if isAuth() && isOwner(request.resource.data.userId);
+      allow update:       if isAuth()
+                          && isOwner(resource.data.userId)
+                          && isOwner(request.resource.data.userId);
+    }
+
+    // budgets: ドキュメント ID が "{uid}_YYYY-MM" 形式
+    match /budgets/{budgetId} {
+      allow read, write: if isAuth()
+                         && budgetId.matches(request.auth.uid + "_.*");
+    }
+
+    // invoices: 本人のみ読み書き
+    match /invoices/{invId} {
+      allow read, delete: if isAuth() && isOwner(resource.data.userId);
+      allow create:       if isAuth() && isOwner(request.resource.data.userId);
+    }
+  }
+}
