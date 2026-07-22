@@ -359,6 +359,8 @@ function clearSlot(idx) {
 // ============================================================
 // LINEから届いたレシート画像
 // ============================================================
+let lineReceiptItems = [];
+
 async function loadLineReceipts() {
   const panel = document.getElementById("line-receipts-panel");
   const list  = document.getElementById("line-receipts-list");
@@ -369,18 +371,18 @@ async function loadLineReceipts() {
       .orderBy("createdAt", "desc")
       .get();
 
-    if (snap.empty) { panel.classList.add("d-none"); list.innerHTML = ""; return; }
+    if (snap.empty) { panel.classList.add("d-none"); list.innerHTML = ""; lineReceiptItems = []; return; }
 
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const thumbs = await Promise.all(items.map(async item => {
+    lineReceiptItems = await Promise.all(items.map(async item => {
       const url = await storage.ref(item.storagePath).getDownloadURL();
       return { ...item, url };
     }));
 
-    list.innerHTML = thumbs.map(item => `
-      <img src="${item.url}" data-id="${esc(item.id)}" data-path="${esc(item.storagePath)}"
+    list.innerHTML = lineReceiptItems.map(item => `
+      <img src="${item.url}" data-id="${esc(item.id)}"
         class="rounded" style="width:64px;height:64px;object-fit:cover;cursor:pointer;"
-        onclick="pickLineReceipt('${item.id}','${esc(item.storagePath)}')" alt="LINEレシート">
+        onclick="pickLineReceipt('${item.id}')" alt="LINEレシート">
     `).join("");
     panel.classList.remove("d-none");
   } catch (e) {
@@ -389,21 +391,30 @@ async function loadLineReceipts() {
   }
 }
 
-function pickLineReceipt(docId, storagePath) {
+function pickLineReceipt(docId) {
+  const item = lineReceiptItems.find(i => i.id === docId);
+  if (!item) return;
+
   const idx = receiptFiles[0] || receiptRemote[0] ? 1 : 0;
   receiptFiles[idx]  = null;
-  receiptRemote[idx] = { storagePath, docId };
+  receiptRemote[idx] = { storagePath: item.storagePath, docId: item.id };
 
   document.getElementById(`file-input-${idx}`).value = "";
   const img = document.getElementById(`preview-img-${idx}`);
-  storage.ref(storagePath).getDownloadURL().then(url => { img.src = url; });
+  img.src = item.url;
   img.classList.remove("d-none");
   document.getElementById(`upload-ph-${idx}`).classList.add("d-none");
   document.getElementById("btn-analyze").disabled = false;
 
+  if (item.analysis) {
+    applyAnalysisToForm(item.analysis);
+    showToast("LINEでの解析結果を反映しました", "success");
+  }
+
   db.collection("lineReceipts").doc(docId).delete().catch(() => {});
+  lineReceiptItems = lineReceiptItems.filter(i => i.id !== docId);
   document.querySelector(`#line-receipts-list img[data-id="${docId}"]`)?.remove();
-  if (!document.getElementById("line-receipts-list").children.length) {
+  if (!lineReceiptItems.length) {
     document.getElementById("line-receipts-panel").classList.add("d-none");
   }
 }
