@@ -4,27 +4,34 @@ const logger = require("firebase-functions/logger");
 const { pushText, downloadLineContent } = require("./lineClient");
 const { analyzeReceiptImageBuffer }     = require("./receiptAnalyzer");
 
-const CATEGORY_LABEL = {
-  food: "食費", drink: "飲料", household: "日用品", clothing: "衣類",
-  electronics: "家電", health: "医療・健康", transport: "交通費",
-  entertainment: "娯楽", education: "教育", other: "その他"
-};
+function yen(n) {
+  return `¥${Number(n || 0).toLocaleString()}`;
+}
 
 function formatReceiptSummary(a) {
+  const p = a.payment || {};
   const lines = ["レシートを解析しました🧾"];
   lines.push(`店舗: ${a.store?.name || "不明"}`);
   lines.push(`日付: ${a.receiptDate}`);
   if (a.items?.length) {
     lines.push("");
-    lines.push("品目:");
+    lines.push("部門・個数・金額:");
     for (const it of a.items) {
-      const price = it.subtotal ?? it.unitPrice ?? 0;
-      lines.push(`・${it.name}　¥${Number(price).toLocaleString()}`);
+      lines.push(`・${it.name}　${it.quantity ?? "-"}個　${yen(it.subtotal)}`);
     }
   }
   lines.push("");
-  lines.push(`合計: ¥${Number(a.payment?.total || 0).toLocaleString()}`);
-  lines.push(`カテゴリ: ${CATEGORY_LABEL[a.category] || a.category}`);
+  lines.push(`総点数: ${p.totalQty ?? "-"}`);
+  lines.push(`組数: ${p.txCount ?? "-"}`);
+  lines.push(`値引き: ${yen(p.discount)}`);
+  lines.push(`合計(１): ${yen(p.total)}`);
+  lines.push(`客単価: ${yen(p.customerUnitPrice)}`);
+  lines.push(`現金売上: ${yen(p.cashSales)}`);
+  lines.push(`信計売上: ${yen(p.cumulativeSales)}`);
+  lines.push(`合計(２): ${yen(p.total2)}`);
+  lines.push(`入金: ${yen(p.cashIn)}`);
+  lines.push(`出金: ${yen(p.cashOut)}`);
+  lines.push(`合計(３)理論在高: ${yen(p.cashBalance)}`);
   lines.push("");
   lines.push("取引として自動保存しました。内容の確認・修正はアプリの「取引一覧」から行ってください。");
   return lines.join("\n");
@@ -38,6 +45,11 @@ function buildDownloadUrl(bucketName, storagePath, token) {
 
 async function saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath) {
   const items = analysis.items || [];
+  const p     = analysis.payment || {};
+
+  const income   = p.cashIn  ? [{ name: "入金", amount: p.cashIn }]  : [];
+  const expenses = p.cashOut ? [{ name: "出金", amount: p.cashOut }] : [];
+
   await admin.firestore().collection("transactions").add({
     userId:      uid,
     receiptDate: analysis.receiptDate,
@@ -47,18 +59,18 @@ async function saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath)
       phone:   analysis.store?.phone   || ""
     },
     items,
-    income:   [],
-    expenses: [],
+    income,
+    expenses,
     payment: {
-      subtotal:          analysis.payment?.subtotal          || 0,
-      tax:               analysis.payment?.tax               ?? null,
-      total:             analysis.payment?.total              || 0,
-      method:            analysis.payment?.method             || "other",
-      discount:          analysis.payment?.discount           || 0,
-      totalQty:          items.reduce((s, it) => s + (Number(it.quantity) || 0), 0),
-      txCount:           analysis.payment?.txCount            || items.length,
-      customerUnitPrice: analysis.payment?.customerUnitPrice ?? null,
-      cumulativeSales:   analysis.payment?.cumulativeSales   ?? null,
+      totalQty:          p.totalQty            || items.reduce((s, it) => s + (Number(it.quantity) || 0), 0),
+      txCount:           p.txCount             || items.length,
+      discount:          p.discount            || 0,
+      total:             p.total               || 0,
+      customerUnitPrice: p.customerUnitPrice   ?? null,
+      cumulativeSales:   p.cumulativeSales     ?? null,
+      cashSales:         p.cashSales           ?? null,
+      total2:            p.total2              ?? null,
+      cashBalance:       p.cashBalance         ?? null,
     },
     category: analysis.category || "other",
     weather:  null,

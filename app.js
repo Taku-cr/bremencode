@@ -500,6 +500,12 @@ function applyAnalysisToForm(data) {
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
   if (data.payment?.customerUnitPrice) document.getElementById("f-customer-unit-price").value  = data.payment.customerUnitPrice;
   if (data.payment?.cumulativeSales)   document.getElementById("f-cumulative-sales").value      = data.payment.cumulativeSales;
+  if (data.payment?.cashSales != null)    document.getElementById("f-cash-sales").value        = data.payment.cashSales;
+  if (data.payment?.total2 != null)       document.getElementById("f-total2").value            = data.payment.total2;
+  if (data.payment?.cashBalance != null)  document.getElementById("f-register-balance").value  = data.payment.cashBalance;
+
+  if (data.payment?.cashIn)  { incomeItems.push({ name: "入金", amount: data.payment.cashIn }); renderCash("income"); }
+  if (data.payment?.cashOut) { expenseItems.push({ name: "出金", amount: data.payment.cashOut }); renderCash("expense"); }
 }
 
 // ============================================================
@@ -757,6 +763,9 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
         txCount:           Number(document.getElementById("f-tx-count").value)             || 0,
         customerUnitPrice: Number(document.getElementById("f-customer-unit-price").value)  || null,
         cumulativeSales:   Number(document.getElementById("f-cumulative-sales").value)     || null,
+        cashSales:         Number(document.getElementById("f-cash-sales").value)           || null,
+        total2:            Number(document.getElementById("f-total2").value)               || null,
+        cashBalance:       Number(document.getElementById("f-register-balance").value)     || null,
       },
       category:   document.getElementById("f-category").value,
       weather:    weatherData || null,

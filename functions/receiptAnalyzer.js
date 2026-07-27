@@ -1,15 +1,55 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require("axios");
 
-const PROMPT = `このレシート画像を解析して、以下のJSON形式で情報を抽出してください。
+const PROMPT = `この画像は店舗の「売上精算書」（レジ締め帳票）です。以下のJSON形式で情報を抽出してください。
 読み取れない・存在しない項目はnullにしてください。
 JSONのみを返してください（マークダウンのコードブロック不要）。
+
+【売上精算書のフォーマット（例）】
+・店名
+Bremen
+・日付
+2026年07月26日(日)
+売上精算
+・部門、個数、金額
+ 1 調理パン   189個   53,810
+ 2 焼きこみ   285個   56,470
+-------------------------------
+・総点数             977
+・取引数             124
+・組数              124
+・商品合計(税抜)     ¥232,409
+-------------------------------
+[売上高(税込)]       232,747
+-------------------------------
+[値引き]           -3,600
+-------------------------------
+合計(１)         ¥229,147
+客単価            ¥1,848
+-------------------------------
+現金売上      83件  153,779
+信計売上      41件   75,368
+（他の決済手段の内訳が続く）
+-------------------------------
+合計(２)         ¥229,147
+-------------------------------
+[理論在高]
+釣銭準備                0
+現金売上      83件  153,779
+入金         0件        0
+出金         1件     -770
+-------------------------------
+合計（3）         ¥153,009
 
 【重要：OCR精度向上のための注意事項】
 - 数字の誤認識に注意すること。特に「6と9」「5と8」「1と7」「0と6」は形が似ているため、画像をよく確認して正確に読み取ること。
 - カタカナ・ひらがなの商品名は推測・補完せず、画像に印字された文字をそのまま読み取ること（例：「フランスパン」を「食パン」と変換しない）。
 - 金額は整数（円）で返すこと。小数点不可。
 - 数量は印字された実際の個数（通常1〜数個の小さな整数）を読み取ること。価格と混同しないこと。
+- 「取引数」と「組数」は別の行なので混同しないこと。payment.txCount には「組数」の値を入れること。
+- 「合計(１)」（値引き後の売上合計）と「合計(２)」（決済手段内訳の合計）は別の行として両方読み取ること。通常は同額になる。
+- 「合計（３）」は理論在高（現金の理論残高）のことで、[理論在高]セクションの合計行を読み取ること。
+- 「信計売上」は決済手段内訳の中の「信計売上」の金額（件数ではなく金額）を読み取ること。
 
 {
   "receiptDate": "YYYY-MM-DD形式の日付、不明ならnull",
@@ -20,24 +60,27 @@ JSONのみを返してください（マークダウンのコードブロック�
   },
   "items": [
     {
-      "name": "商品名",
-      "quantity": 数量（数値）,
-      "unitPrice": 単価（数値）,
-      "subtotal": 小計（数値）,
+      "name": "部門名（商品名）",
+      "quantity": 個数（数値）,
+      "unitPrice": 単価（数値、印字されていなければnull）,
+      "subtotal": 金額（数値）,
       "category": "food/drink/household/clothing/electronics/health/transport/entertainment/education/other のいずれか"
     }
   ],
   "payment": {
-    "subtotal": 小計金額（数値）,
-    "tax": 消費税額（数値またはnull）,
-    "total": 合計金額（数値）,
-    "method": "cash/credit/ic/qr/debit/other のいずれか",
-    "discount": 値引き・割引・クーポン等の合計金額（数値、なければ0）,
-    "txCount": 商品の種類数または取引明細行数（数値）,
+    "totalQty": 総点数（数値）,
+    "txCount": 組数（数値。取引数ではなく組数の値）,
+    "discount": [値引き]の合計金額（数値、なければ0）,
+    "total": 合計（１）の金額（数値）,
     "customerUnitPrice": 客単価（数値またはnull）,
-    "cumulativeSales": 信計売上・累計売上・日計売上（数値またはnull）
+    "cumulativeSales": 信計売上の金額（数値またはnull）,
+    "cashSales": 現金売上の金額（数値またはnull）,
+    "total2": 合計（２）の金額（数値またはnull）,
+    "cashIn": 入金の金額（数値、なければ0）,
+    "cashOut": 出金の金額（数値、なければ0。マイナス表記の場合は絶対値）,
+    "cashBalance": 合計（３）（理論在高）の金額（数値またはnull）
   },
-  "category": "food/drink/household/clothing/electronics/health/transport/entertainment/education/other のいずれか",
+  "category": "food/drink/household/clothing/electronics/health/transport/entertainment/education/other のいずれか（部門構成から最も近いもの）",
   "ocrRawText": "レシートに書かれているテキスト全文",
   "confidence": 0から1の解析信頼度（数値）
 }`;
@@ -68,7 +111,12 @@ async function runReceiptAnalysis(imageParts) {
     receiptDate: parsed.receiptDate  || todayStr(),
     store:       parsed.store        || { name: "", address: null, phone: null },
     items:       parsed.items        || [],
-    payment:     { subtotal: 0, tax: null, total: 0, method: "cash", discount: 0, txCount: 0, ...(parsed.payment || {}) },
+    payment: {
+      totalQty: 0, txCount: 0, discount: 0, total: 0,
+      customerUnitPrice: null, cumulativeSales: null,
+      cashSales: null, total2: null, cashIn: 0, cashOut: 0, cashBalance: null,
+      ...(parsed.payment || {})
+    },
     category:    parsed.category     || "other",
     ocrRawText:  parsed.ocrRawText   || "",
     confidence:  parsed.confidence   ?? 0.9,

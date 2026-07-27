@@ -35,14 +35,31 @@
           }
         },
 
+        "income": {
+          "type": "array",
+          "description": "入金の内訳",
+          "items": { "type": "object", "properties": { "name": { "type": "string" }, "amount": { "type": "number" } } }
+        },
+        "expenses": {
+          "type": "array",
+          "description": "出金の内訳",
+          "items": { "type": "object", "properties": { "name": { "type": "string" }, "amount": { "type": "number" } } }
+        },
+
         "payment": {
           "type": "object",
+          "description": "店舗の売上精算書（レジ締め帳票）から抽出する金額情報",
           "required": ["total"],
           "properties": {
-            "subtotal": { "type": "number", "minimum": 0 },
-            "tax":      { "type": "number", "minimum": 0 },
-            "total":    { "type": "number", "minimum": 0 },
-            "method":   { "type": "string", "enum": ["cash", "credit", "debit", "ic", "qr", "other"] }
+            "totalQty":          { "type": "number", "minimum": 0, "description": "総点数" },
+            "txCount":           { "type": "number", "minimum": 0, "description": "組数" },
+            "discount":          { "type": "number", "minimum": 0, "description": "値引き合計" },
+            "total":             { "type": "number", "minimum": 0, "description": "合計（１）（値引き後の売上合計）" },
+            "customerUnitPrice": { "type": ["number", "null"], "description": "客単価" },
+            "cumulativeSales":   { "type": ["number", "null"], "description": "信計売上" },
+            "cashSales":         { "type": ["number", "null"], "description": "現金売上" },
+            "total2":            { "type": ["number", "null"], "description": "合計（２）（決済手段内訳の合計、通常は合計（１）と同額）" },
+            "cashBalance":       { "type": ["number", "null"], "description": "合計（３）（理論在高）" }
           }
         },
 
