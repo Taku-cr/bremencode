@@ -1,9 +1,11 @@
-const { onCall, onRequest }             = require("firebase-functions/v2/https");
-const { setGlobalOptions }              = require("firebase-functions/v2");
-const admin                             = require("firebase-admin");
+const { onCall, onRequest }              = require("firebase-functions/v2/https");
+const { onDocumentCreated }              = require("firebase-functions/v2/firestore");
+const { setGlobalOptions }               = require("firebase-functions/v2");
+const admin                              = require("firebase-admin");
 const { analyzeReceiptImage, analyzeInvoiceImage } = require("./receiptAnalyzer");
-const { getWeatherByCoords, getWeatherByCity } = require("./weatherService");
-const { handleLineWebhook }             = require("./lineWebhook");
+const { getWeatherByCoords, getWeatherByCity }      = require("./weatherService");
+const { handleLineWebhook }               = require("./lineWebhook");
+const { processLineReceiptJob }           = require("./lineReceiptJob");
 
 admin.initializeApp();
 setGlobalOptions({ region: "asia-northeast1" });
@@ -110,5 +112,18 @@ exports.getMonthlyReport = onCall(async (request) => {
 // --------------------------------------------------------
 // lineWebhook
 //   LINE Developers の「Webhook URL」に設定するエンドポイント
+//   即レスのみ行い、重い処理は lineJobs 経由で onLineReceiptJobCreated に委譲する
 // --------------------------------------------------------
 exports.lineWebhook = onRequest(handleLineWebhook);
+
+// --------------------------------------------------------
+// onLineReceiptJobCreated
+//   lineJobs/{jobId} 作成をトリガーに、LINEで届いたレシート画像/PDFを
+//   ダウンロード→Gemini解析→pushで通知する（Webhookの応答時間を消費しない）
+// --------------------------------------------------------
+exports.onLineReceiptJobCreated = onDocumentCreated(
+  { document: "lineJobs/{jobId}", timeoutSeconds: 120, memory: "512MiB" },
+  async (event) => {
+    await processLineReceiptJob(event.data.data());
+  }
+);

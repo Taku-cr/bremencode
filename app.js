@@ -315,6 +315,8 @@ function renderWeatherChart(txs) {
 // ============================================================
 // 画像アップロード
 // ============================================================
+const uploadPhDefaults = [0, 1].map(idx => document.getElementById(`upload-ph-${idx}`).innerHTML);
+
 [0, 1].forEach(idx => {
   const slot      = document.getElementById(`upload-slot-${idx}`);
   const fileInput = document.getElementById(`file-input-${idx}`);
@@ -350,10 +352,16 @@ function clearSlot(idx) {
   receiptRemote[idx] = null;
   document.getElementById(`file-input-${idx}`).value = "";
   document.getElementById(`preview-img-${idx}`).classList.add("d-none");
-  document.getElementById(`upload-ph-${idx}`).classList.remove("d-none");
+  const ph = document.getElementById(`upload-ph-${idx}`);
+  ph.innerHTML = uploadPhDefaults[idx];
+  ph.classList.remove("d-none");
   if (!receiptFiles.some(Boolean) && !receiptRemote.some(Boolean)) {
     document.getElementById("btn-analyze").disabled = true;
   }
+}
+
+function isPdfPath(path) {
+  return path.toLowerCase().endsWith(".pdf");
 }
 
 // ============================================================
@@ -379,7 +387,13 @@ async function loadLineReceipts() {
       return { ...item, url };
     }));
 
-    list.innerHTML = lineReceiptItems.map(item => `
+    list.innerHTML = lineReceiptItems.map(item => isPdfPath(item.storagePath) ? `
+      <div class="rounded border d-flex flex-column align-items-center justify-content-center text-danger"
+        data-id="${esc(item.id)}" style="width:64px;height:64px;cursor:pointer;"
+        onclick="pickLineReceipt('${item.id}')" title="PDF">
+        <i class="fa-solid fa-file-pdf fa-lg"></i><span class="small">PDF</span>
+      </div>
+    ` : `
       <img src="${item.url}" data-id="${esc(item.id)}"
         class="rounded" style="width:64px;height:64px;object-fit:cover;cursor:pointer;"
         onclick="pickLineReceipt('${item.id}')" alt="LINEレシート">
@@ -401,9 +415,16 @@ function pickLineReceipt(docId) {
 
   document.getElementById(`file-input-${idx}`).value = "";
   const img = document.getElementById(`preview-img-${idx}`);
-  img.src = item.url;
-  img.classList.remove("d-none");
-  document.getElementById(`upload-ph-${idx}`).classList.add("d-none");
+  const ph  = document.getElementById(`upload-ph-${idx}`);
+  if (isPdfPath(item.storagePath)) {
+    img.classList.add("d-none");
+    ph.innerHTML = '<i class="fa-solid fa-file-pdf fa-2x text-danger d-block mb-1"></i><div class="text-muted small">PDF</div>';
+    ph.classList.remove("d-none");
+  } else {
+    img.src = item.url;
+    img.classList.remove("d-none");
+    ph.classList.add("d-none");
+  }
   document.getElementById("btn-analyze").disabled = false;
 
   if (item.analysis) {
@@ -413,7 +434,7 @@ function pickLineReceipt(docId) {
 
   db.collection("lineReceipts").doc(docId).delete().catch(() => {});
   lineReceiptItems = lineReceiptItems.filter(i => i.id !== docId);
-  document.querySelector(`#line-receipts-list img[data-id="${docId}"]`)?.remove();
+  document.querySelector(`#line-receipts-list [data-id="${docId}"]`)?.remove();
   if (!lineReceiptItems.length) {
     document.getElementById("line-receipts-panel").classList.add("d-none");
   }
@@ -934,7 +955,11 @@ function showTxDetail(txId) {
           </div>` : ""}
         ${tx.receipt?.imageUrl ? `
           <h6 class="text-muted small fw-bold text-uppercase">レシート画像</h6>
-          <img src="${tx.receipt.imageUrl}" class="img-fluid rounded mb-3" style="max-height:200px;" alt="">` : ""}
+          ${isPdfPath(tx.receipt.storagePath || "") ? `
+            <a href="${tx.receipt.imageUrl}" target="_blank" rel="noopener" class="btn btn-outline-danger btn-sm mb-3">
+              <i class="fa-solid fa-file-pdf me-1"></i>PDFを開く
+            </a>` : `
+            <img src="${tx.receipt.imageUrl}" class="img-fluid rounded mb-3" style="max-height:200px;" alt="">`}` : ""}
         ${tx.items?.length ? `
           <h6 class="text-muted small fw-bold text-uppercase">明細</h6>
           <table class="table table-sm">
