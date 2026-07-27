@@ -96,20 +96,14 @@ async function processLineReceiptJob(job) {
       resultMessage = formatReceiptSummary(analysis);
     } catch (err) {
       logger.error("LINEコンテンツのAI解析に失敗しました", err);
-      resultMessage = "解析できません。アプリの「レシート追加」画面で手動解析してください。";
+      resultMessage = "解析できません。もう一度送信し直してください。";
     }
 
     if (analysis) {
       await saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath);
     } else {
-      // 解析に失敗した場合のみ、アプリで手動対応できるよう受信箱に残す
-      await admin.firestore().collection("lineReceipts").add({
-        userId:      uid,
-        storagePath,
-        analysis:    null,
-        consumed:    false,
-        createdAt:   admin.firestore.FieldValue.serverTimestamp()
-      });
+      // 解析に失敗した場合は保存せず、アップロード済みの画像も削除する
+      await bucket.file(storagePath).delete().catch(() => {});
     }
 
     await pushText(lineUserId, resultMessage);
