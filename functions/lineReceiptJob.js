@@ -34,6 +34,10 @@ function formatReceiptSummary(a) {
   lines.push(`合計(３)理論在高: ${yen(p.cashBalance)}`);
   lines.push("");
   lines.push("取引として自動保存しました。内容の確認・修正はアプリの「取引一覧」から行ってください。");
+  if (Number(p.cashOut) > 0) {
+    lines.push("");
+    lines.push(`この出金 ${yen(p.cashOut)} は何ですか?`);
+  }
   return lines.join("\n");
 }
 
