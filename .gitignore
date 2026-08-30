@@ -1,4 +1,5 @@
 functions/.env
+functions/serviceAccountKey.json
 functions/node_modules/
 node_modules/
 *.log
