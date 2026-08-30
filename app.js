@@ -75,8 +75,18 @@ let chartWx      = null;
 // ============================================================
 // Auth
 // ============================================================
+const ALLOWED_EMAIL = "bremen.cote@gmail.com";
+
 auth.onAuthStateChanged(user => {
   document.getElementById("loading-screen").style.display = "none";
+
+  if (user && user.email !== ALLOWED_EMAIL) {
+    auth.signOut();
+    const el = document.getElementById("login-error");
+    el.classList.remove("d-none");
+    el.textContent = `このアプリは ${ALLOWED_EMAIL} でのみ利用できます`;
+    return;
+  }
 
   if (user) {
     currentUser = user;

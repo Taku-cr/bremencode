@@ -11,11 +11,12 @@ function isValidSignature(rawBody, signature, channelSecret) {
   return hash === signature;
 }
 
-// このBotは単一ユーザー運用のため、Firebase Authに登録された唯一のユーザーに紐付ける
+const OWNER_EMAIL = "bremen.cote@gmail.com";
+
+// このBotは bremen.cote@gmail.com のアカウントに固定で紐付ける
 async function getOwnerUid() {
-  const { users } = await admin.auth().listUsers(1);
-  if (!users.length) throw new Error("Firebase Authユーザーが存在しません");
-  return users[0].uid;
+  const user = await admin.auth().getUserByEmail(OWNER_EMAIL);
+  return user.uid;
 }
 
 // LINEはWebhookの応答が遅い・失敗すると同じイベントを最大24時間ほど再送してくる。
