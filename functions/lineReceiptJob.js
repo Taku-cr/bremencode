@@ -69,12 +69,13 @@ function formatReceiptSummary(a, issues) {
   if (Number(p.cashOut) > 0) {
     const count = Math.max(1, Number(p.cashOutCount) || 1);
     lines.push("");
-    lines.push(`出金が${count}件あります。1件目は何でいくらですか?（例: 電気代 3000円）`);
+    lines.push(`出金が${count}件あります。品目と金額を教えてください（例: 電気代 3000円）。`);
+    lines.push("1件ずつでも、改行区切りでまとめて送っていただいても構いません。");
   }
   return lines.join("\n");
 }
 
-// ユーザーの返信「品目名 金額」をパースする（例: "電気代 3000円" → { name: "電気代", amount: 3000 }）
+// ユーザーの返信「品目名 金額」を1行分パースする（例: "電気代 3000円" → { name: "電気代", amount: 3000 }）
 function parseExpenseReply(text) {
   const m = String(text || "").trim().match(/^(.*?)[\s、,]*([0-9][0-9,]*)\s*円?\s*$/);
   if (!m) return null;
@@ -82,6 +83,15 @@ function parseExpenseReply(text) {
   const amount = Number(m[2].replace(/,/g, ""));
   if (!name || !Number.isFinite(amount) || amount <= 0) return null;
   return { name, amount };
+}
+
+// 複数行まとめての入力にも対応する（1行ごとに「品目名 金額」としてパースし、
+// パースできた行だけを採用する。例: "牛まさ10000\n業務スーパー5000"）
+function parseExpenseLines(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map(line => parseExpenseReply(line))
+    .filter(Boolean);
 }
 
 // クライアントSDKのref.put()と同様に、ダウンロードトークン付きURLを組み立てる
@@ -153,18 +163,19 @@ async function handleExpenseDialogReply(lineUserId, text, replyToken) {
   const snap = await ref.get();
   if (!snap.exists) return false;
 
-  const dialog = snap.data();
-  const parsed = parseExpenseReply(text);
-  if (!parsed) {
-    await replyText(replyToken, "「品目名 金額」の形式で送ってください（例: 電気代 3000円）。もう一度お願いします。");
+  const dialog  = snap.data();
+  const newRows = parseExpenseLines(text); // 1行でも複数行まとめてでもOK
+  if (newRows.length === 0) {
+    await replyText(replyToken, "「品目名 金額」の形式で送ってください（例: 電気代 3000円）。改行区切りでまとめて送ることもできます。もう一度お願いします。");
     return true;
   }
 
-  const collected = [...(dialog.collected || []), parsed];
+  const collected = [...(dialog.collected || []), ...newRows];
 
   if (collected.length < dialog.totalCount) {
     await ref.update({ collected, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-    await replyText(replyToken, `${collected.length + 1}件目は何でいくらですか?`);
+    const remaining = dialog.totalCount - collected.length;
+    await replyText(replyToken, `残り${remaining}件、品目と金額を教えてください（${collected.length + 1}件目から）。`);
     return true;
   }
 
