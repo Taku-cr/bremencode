@@ -63,6 +63,9 @@ let allTxs       = [];
 let currentPage  = 1;
 const PAGE_SIZE  = 20;
 let activeTxId   = null;
+let activeTx        = null;
+let editExpenseItems = [];
+let editIncomeItems  = [];
 let receiptFiles  = [null, null];
 let receiptRemote = [null, null];
 let weatherData  = null;
@@ -921,9 +924,24 @@ function goPage(p) { currentPage = p; renderTxTable(); }
 // ============================================================
 function showTxDetail(txId) {
   activeTxId = txId;
-  const tx = allTxs.find(t => t.id === txId);
-  if (!tx) return;
+  activeTx   = allTxs.find(t => t.id === txId);
+  if (!activeTx) return;
 
+  setTxModalMode("view");
+  renderTxDetailView(activeTx);
+  new bootstrap.Modal(document.getElementById("modal-tx")).show();
+}
+
+// 詳細/編集の切り替えでフッターボタンの表示を揃える
+function setTxModalMode(mode) {
+  const isEdit = mode === "edit";
+  document.getElementById("btn-edit-tx").classList.toggle("d-none", isEdit);
+  document.getElementById("btn-delete-tx").classList.toggle("d-none", isEdit);
+  document.getElementById("btn-save-tx").classList.toggle("d-none", !isEdit);
+  document.getElementById("btn-cancel-edit-tx").classList.toggle("d-none", !isEdit);
+}
+
+function renderTxDetailView(tx) {
   const cat          = CATEGORIES[tx.category] || CATEGORIES.other;
   const expenseTotal = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const finalTotal   = (tx.payment?.total || 0) - (tx.payment?.discount || 0);
@@ -1005,9 +1023,175 @@ function showTxDetail(txId) {
           </table>` : ""}
       </div>
     </div>`;
-
-  new bootstrap.Modal(document.getElementById("modal-tx")).show();
 }
+
+// ------------------------------------------------------------
+// 編集フォーム（OCR誤読などを手動で修正するための最小限の項目）
+// ------------------------------------------------------------
+function renderTxEditForm(tx) {
+  editExpenseItems = (tx.expenses || []).map(r => ({ ...r }));
+  editIncomeItems  = (tx.income   || []).map(r => ({ ...r }));
+
+  const body = document.getElementById("modal-tx-body");
+  body.innerHTML = `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="mb-2">
+          <label class="form-label small fw-bold">日付</label>
+          <input type="date" class="form-control form-control-sm" id="edit-date" value="${tx.receiptDate || ""}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">店舗名</label>
+          <input type="text" class="form-control form-control-sm" id="edit-store" value="${esc(tx.store?.name || "")}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">カテゴリ</label>
+          <select class="form-select form-select-sm" id="edit-category">
+            ${Object.entries(CATEGORIES).map(([k, c]) =>
+              `<option value="${k}" ${tx.category === k ? "selected" : ""}>${c.label}</option>`
+            ).join("")}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">売上高(税込)</label>
+          <input type="number" class="form-control form-control-sm" id="edit-total" min="0" value="${tx.payment?.total || 0}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">値引き</label>
+          <input type="number" class="form-control form-control-sm" id="edit-discount" min="0" value="${tx.payment?.discount || 0}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">客単価</label>
+          <input type="number" class="form-control form-control-sm" id="edit-cup" min="0" value="${tx.payment?.customerUnitPrice ?? ""}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">信計売上</label>
+          <input type="number" class="form-control form-control-sm" id="edit-cumsales" min="0" value="${tx.payment?.cumulativeSales ?? ""}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">メモ</label>
+          <textarea class="form-control form-control-sm" id="edit-notes" rows="2">${esc(tx.notes || "")}</textarea>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label small fw-bold mb-0">出金内訳</label>
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="addEditCashRow('expense')">
+            <i class="fa-solid fa-plus me-1"></i>追加
+          </button>
+        </div>
+        <div id="edit-expense-container" class="mb-3"></div>
+
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label small fw-bold mb-0">入金内訳</label>
+          <button type="button" class="btn btn-sm btn-outline-success" onclick="addEditCashRow('income')">
+            <i class="fa-solid fa-plus me-1"></i>追加
+          </button>
+        </div>
+        <div id="edit-income-container"></div>
+      </div>
+    </div>`;
+
+  renderEditCash("expense");
+  renderEditCash("income");
+}
+
+function addEditCashRow(type) {
+  const list = type === "income" ? editIncomeItems : editExpenseItems;
+  list.push({ name: "", amount: 0 });
+  renderEditCash(type);
+}
+function removeEditCashRow(type, i) {
+  const list = type === "income" ? editIncomeItems : editExpenseItems;
+  list.splice(i, 1);
+  renderEditCash(type);
+}
+function updateEditCashRow(type, i, field, val) {
+  const list = type === "income" ? editIncomeItems : editExpenseItems;
+  list[i][field] = val;
+}
+function renderEditCash(type) {
+  const list  = type === "income" ? editIncomeItems : editExpenseItems;
+  const el    = document.getElementById(`edit-${type}-container`);
+  const color = type === "income" ? "success" : "danger";
+  el.innerHTML = list.map((row, i) => `
+    <div class="row g-2 mb-2 align-items-center">
+      <div class="col-6">
+        <input type="text" class="form-control form-control-sm" placeholder="${type === "income" ? "入金名" : "出金名"}"
+          value="${esc(row.name)}" oninput="updateEditCashRow('${type}',${i},'name',this.value)">
+      </div>
+      <div class="col-5">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">¥</span>
+          <input type="number" class="form-control" placeholder="金額" min="0"
+            value="${row.amount || ""}" oninput="updateEditCashRow('${type}',${i},'amount',+this.value)">
+        </div>
+      </div>
+      <div class="col-1 text-end">
+        <button type="button" class="btn btn-sm btn-outline-${color}" onclick="removeEditCashRow('${type}',${i})">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+  `).join("") || `<div class="text-muted small">なし</div>`;
+}
+
+document.getElementById("btn-edit-tx").addEventListener("click", () => {
+  if (!activeTx) return;
+  renderTxEditForm(activeTx);
+  setTxModalMode("edit");
+});
+
+document.getElementById("btn-cancel-edit-tx").addEventListener("click", () => {
+  if (!activeTx) return;
+  renderTxDetailView(activeTx);
+  setTxModalMode("view");
+});
+
+document.getElementById("btn-save-tx").addEventListener("click", async () => {
+  if (!activeTxId || !activeTx) return;
+
+  const date = document.getElementById("edit-date").value;
+  if (!date) { showToast("日付を入力してください", "warning"); return; }
+
+  const cupVal = document.getElementById("edit-cup").value;
+  const csVal  = document.getElementById("edit-cumsales").value;
+
+  const update = {
+    receiptDate: date,
+    store:    { ...(activeTx.store || {}), name: document.getElementById("edit-store").value.trim() },
+    category: document.getElementById("edit-category").value,
+    payment: {
+      ...(activeTx.payment || {}),
+      total:             Number(document.getElementById("edit-total").value)    || 0,
+      discount:          Number(document.getElementById("edit-discount").value) || 0,
+      customerUnitPrice: cupVal === "" ? null : Number(cupVal),
+      cumulativeSales:   csVal  === "" ? null : Number(csVal),
+    },
+    expenses:   editExpenseItems.filter(r => r.name || r.amount),
+    income:     editIncomeItems.filter(r => r.name || r.amount),
+    notes:      document.getElementById("edit-notes").value,
+    isVerified: true,
+    updatedAt:  firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  try {
+    await db.collection("transactions").doc(activeTxId).update(update);
+    showToast("保存しました", "success");
+
+    const idx = allTxs.findIndex(t => t.id === activeTxId);
+    if (idx !== -1) {
+      allTxs[idx] = { ...allTxs[idx], ...update, updatedAt: new Date() };
+      activeTx = allTxs[idx];
+    }
+    renderTxTable();
+    renderTxDetailView(activeTx);
+    setTxModalMode("view");
+  } catch (e) {
+    console.error(e);
+    showToast("保存に失敗しました", "danger");
+  }
+});
 
 document.getElementById("btn-delete-tx").addEventListener("click", async () => {
   if (!activeTxId || !confirm("この取引を削除しますか？")) return;
