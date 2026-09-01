@@ -987,6 +987,22 @@ function showTxDetail(txId) {
               `<tr><td>${esc(i.name)}</td><td>${i.quantity}</td><td class="text-end">${fmtCurrency(i.subtotal || i.unitPrice)}</td></tr>`
             ).join("")}</tbody>
           </table>` : ""}
+        ${tx.expenses?.length ? `
+          <h6 class="text-muted small fw-bold text-uppercase">出金内訳</h6>
+          <table class="table table-sm">
+            <thead><tr><th>項目</th><th class="text-end">金額</th></tr></thead>
+            <tbody>${tx.expenses.map(e =>
+              `<tr><td>${esc(e.name || "出金")}</td><td class="text-end text-danger">-${fmtCurrency(e.amount)}</td></tr>`
+            ).join("")}</tbody>
+          </table>` : ""}
+        ${tx.income?.length ? `
+          <h6 class="text-muted small fw-bold text-uppercase">入金内訳</h6>
+          <table class="table table-sm">
+            <thead><tr><th>項目</th><th class="text-end">金額</th></tr></thead>
+            <tbody>${tx.income.map(i =>
+              `<tr><td>${esc(i.name || "入金")}</td><td class="text-end text-success">${fmtCurrency(i.amount)}</td></tr>`
+            ).join("")}</tbody>
+          </table>` : ""}
       </div>
     </div>`;
 
@@ -1076,9 +1092,11 @@ async function exportToExcel() {
           const amt  = Number(item.subtotal) || Number(item.unitPrice) || 0;
           const name = item.name || "";
           const col  = PROD_COLS.slice(0, -2).find(c => name === c);
+          // 9商品列にもマッチせず「その他」でもない項目（名前が空、または「未登録商品」など
+          // 想定外の部門名で印字されている場合を含む）はすべて未登録商品に計上する
           if (col)                    prod[col]         += amt;
           else if (name === "その他")  prod["その他"]     += amt;
-          else if (!name)           { prod["未登録商品"] += amt; hasUnnamedItems = true; }
+          else                       { prod["未登録商品"] += amt; hasUnnamedItems = true; }
         }));
 
         ws.addRow([

@@ -47,9 +47,13 @@ Bremen
 - 金額は整数（円）で返すこと。小数点不可。
 - 数量は印字された実際の個数（通常1〜数個の小さな整数）を読み取ること。価格と混同しないこと。
 - 「取引数」と「組数」は別の行なので混同しないこと。payment.txCount には「組数」の値を入れること。
-- 「合計(１)」（値引き後の売上合計）と「合計(２)」（決済手段内訳の合計）は別の行として両方読み取ること。通常は同額になる。
+- payment.total には[売上高(税込)]の金額（値引きされる前の金額）を入れること。「合計(１)」（値引き後の金額）ではない。
+- payment.discount は[値引き]の金額を必ず正の数値で入れること（レシート上はマイナス表記でも、絶対値にすること）。
+- 「合計(１)」（[売上高(税込)]から[値引き]を差し引いた後の金額）は保存しない。payment.totalとpayment.discountから計算できるため。
+- 「合計(２)」（決済手段内訳の合計）は「合計(１)」と通常同額になる。payment.total2にはこちらの値を入れること。
 - 「合計（３）」は理論在高（現金の理論残高）のことで、[理論在高]セクションの合計行を読み取ること。
 - 「信計売上」は決済手段内訳の中の「信計売上」の金額（件数ではなく金額）を読み取ること。
+- 「出金」の行には「N件」という件数が併記されている（例: 出金 1件 -770）。金額だけでなく、この件数もpayment.cashOutCountに読み取ること。
 
 {
   "receiptDate": "YYYY-MM-DD形式の日付、不明ならnull",
@@ -70,14 +74,15 @@ Bremen
   "payment": {
     "totalQty": 総点数（数値）,
     "txCount": 組数（数値。取引数ではなく組数の値）,
-    "discount": [値引き]の合計金額（数値、なければ0）,
-    "total": 合計（１）の金額（数値）,
+    "discount": [値引き]の金額の絶対値（正の数値、なければ0。マイナス表記でも正の数値で返す）,
+    "total": [売上高(税込)]の金額（値引き前の金額、数値）,
     "customerUnitPrice": 客単価（数値またはnull）,
     "cumulativeSales": 信計売上の金額（数値またはnull）,
     "cashSales": 現金売上の金額（数値またはnull）,
     "total2": 合計（２）の金額（数値またはnull）,
     "cashIn": 入金の金額（数値、なければ0）,
     "cashOut": 出金の金額（数値、なければ0。マイナス表記の場合は絶対値）,
+    "cashOutCount": 出金の件数（数値。「出金 N件」のN。出金が無ければ0）,
     "cashBalance": 合計（３）（理論在高）の金額（数値またはnull）
   },
   "category": "food/drink/household/clothing/electronics/health/transport/entertainment/education/other のいずれか（部門構成から最も近いもの）",
@@ -114,7 +119,7 @@ async function runReceiptAnalysis(imageParts) {
     payment: {
       totalQty: 0, txCount: 0, discount: 0, total: 0,
       customerUnitPrice: null, cumulativeSales: null,
-      cashSales: null, total2: null, cashIn: 0, cashOut: 0, cashBalance: null,
+      cashSales: null, total2: null, cashIn: 0, cashOut: 0, cashOutCount: 0, cashBalance: null,
       ...(parsed.payment || {})
     },
     category:    parsed.category     || "other",

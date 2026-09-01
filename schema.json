@@ -53,12 +53,13 @@
           "properties": {
             "totalQty":          { "type": "number", "minimum": 0, "description": "総点数" },
             "txCount":           { "type": "number", "minimum": 0, "description": "組数" },
-            "discount":          { "type": "number", "minimum": 0, "description": "値引き合計" },
-            "total":             { "type": "number", "minimum": 0, "description": "合計（１）（値引き後の売上合計）" },
+            "discount":          { "type": "number", "minimum": 0, "description": "値引き合計（正の数値）" },
+            "total":             { "type": "number", "minimum": 0, "description": "売上高（税込、値引き前）。値引き後の合計（１）は total - discount で算出する" },
             "customerUnitPrice": { "type": ["number", "null"], "description": "客単価" },
             "cumulativeSales":   { "type": ["number", "null"], "description": "信計売上" },
             "cashSales":         { "type": ["number", "null"], "description": "現金売上" },
             "total2":            { "type": ["number", "null"], "description": "合計（２）（決済手段内訳の合計、通常は合計（１）と同額）" },
+            "cashOutCount":      { "type": "number", "minimum": 0, "description": "出金の件数（レシート上の「出金 N件」のN）" },
             "cashBalance":       { "type": ["number", "null"], "description": "合計（３）（理論在高）" }
           }
         },
