@@ -828,10 +828,21 @@ async function loadTransactions() {
   if (!document.getElementById("filter-month").value) {
     document.getElementById("filter-month").value = fmtYM(now);
   }
+  updateFilterMonthRangeLabel();
   await applyFilters();
 }
 
 document.getElementById("btn-filter").addEventListener("click", applyFilters);
+document.getElementById("filter-month").addEventListener("change", updateFilterMonthRangeLabel);
+
+// 選択中の月フィルタが、実際にどの日付範囲（21日〜翌20日）を指すかを表示する
+function updateFilterMonthRangeLabel() {
+  const month = document.getElementById("filter-month").value;
+  const el    = document.getElementById("filter-month-range");
+  if (!month) { el.textContent = ""; return; }
+  const { startStr, endStr } = periodRangeForMonth(month);
+  el.textContent = `${startStr} 〜 ${endStr}`;
+}
 
 async function applyFilters() {
   const month   = document.getElementById("filter-month").value;
@@ -844,8 +855,9 @@ async function applyFilters() {
       .orderBy("receiptDate", "desc");
 
     if (month) {
-      q = q.where("receiptDate", ">=", month + "-01")
-           .where("receiptDate", "<=", month + "-31");
+      const { startStr, endStr } = periodRangeForMonth(month);
+      q = q.where("receiptDate", ">=", startStr)
+           .where("receiptDate", "<=", endStr);
     }
     if (cat) q = q.where("category", "==", cat);
 
@@ -1416,6 +1428,15 @@ function getBillingPeriods(dates) {
       const sheetName = `${start.getMonth()+1}.${start.getDate()}-${end.getMonth()+1}.${end.getDate()}`;
       return { start, end, sheetName };
     });
+}
+
+// "YYYY-MM"（締め月）→ その月度の21日〜翌20日の実日付範囲を "YYYY-MM-DD" 文字列で返す。
+// 例: "2026-05" → 2026-04-21〜2026-05-20（取引一覧の月フィルタ、Excel出力と揃える）
+function periodRangeForMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const start  = new Date(y, m - 2, 21);
+  const end    = new Date(y, m - 1, 20);
+  return { startStr: toLocalStr(start), endStr: toLocalStr(end) };
 }
 
 // 現金出納帳シートの末尾に「113,500円との差額」照合行を1行追加する（5列想定）
