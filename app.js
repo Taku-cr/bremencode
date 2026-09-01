@@ -1026,76 +1026,236 @@ function renderTxDetailView(tx) {
 }
 
 // ------------------------------------------------------------
-// 編集フォーム（OCR誤読などを手動で修正するための最小限の項目）
+// 編集フォーム（「レシート追加」画面と同じ項目・見た目で、OCR誤読などを手動で修正する）
 // ------------------------------------------------------------
+let editReceiptItems = [];
+
 function renderTxEditForm(tx) {
+  editReceiptItems = (tx.items    || []).map(r => ({ ...r }));
   editExpenseItems = (tx.expenses || []).map(r => ({ ...r }));
   editIncomeItems  = (tx.income   || []).map(r => ({ ...r }));
 
+  const p    = tx.payment || {};
   const body = document.getElementById("modal-tx-body");
   body.innerHTML = `
-    <div class="row g-3">
-      <div class="col-md-6">
-        <div class="mb-2">
-          <label class="form-label small fw-bold">日付</label>
-          <input type="date" class="form-control form-control-sm" id="edit-date" value="${tx.receiptDate || ""}">
+    <form id="tx-edit-form">
+      <div class="row g-3">
+        <div class="col-6">
+          <label class="form-label small fw-bold">取引日 *</label>
+          <input type="date" class="form-control" id="edit-date" value="${tx.receiptDate || ""}" required>
         </div>
-        <div class="mb-2">
-          <label class="form-label small fw-bold">店舗名</label>
-          <input type="text" class="form-control form-control-sm" id="edit-store" value="${esc(tx.store?.name || "")}">
-        </div>
-        <div class="mb-2">
+        <div class="col-6">
           <label class="form-label small fw-bold">カテゴリ</label>
-          <select class="form-select form-select-sm" id="edit-category">
+          <select class="form-select" id="edit-category">
             ${Object.entries(CATEGORIES).map(([k, c]) =>
               `<option value="${k}" ${tx.category === k ? "selected" : ""}>${c.label}</option>`
             ).join("")}
           </select>
         </div>
-        <div class="mb-2">
-          <label class="form-label small fw-bold">売上高(税込)</label>
-          <input type="number" class="form-control form-control-sm" id="edit-total" min="0" value="${tx.payment?.total || 0}">
+        <div class="col-12">
+          <label class="form-label small fw-bold">店舗名</label>
+          <input type="text" class="form-control" id="edit-store" value="${esc(tx.store?.name || "")}" placeholder="例：セブンイレブン">
         </div>
-        <div class="mb-2">
+
+        <div class="col-12">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <label class="form-label small fw-bold mb-0">明細</label>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addEditItem()">
+              <i class="fa-solid fa-plus me-1"></i>追加
+            </button>
+          </div>
+          <div id="edit-items-container"></div>
+        </div>
+
+        <div class="col-6">
+          <label class="form-label small fw-bold">小計（明細の合計）</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control bg-light" id="edit-subtotal" min="0" placeholder="0" readonly>
+          </div>
+        </div>
+        <div class="col-6">
+          <label class="form-label small fw-bold">合計（税込み合計）*</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-total" min="0" placeholder="0" value="${p.total || 0}" required oninput="recalcEditFinalTotal()">
+          </div>
+        </div>
+
+        <div class="col-3">
+          <label class="form-label small fw-bold">総点数</label>
+          <input type="number" class="form-control bg-light" id="edit-total-qty" min="0" placeholder="0" readonly>
+        </div>
+        <div class="col-3">
+          <label class="form-label small fw-bold">取引数</label>
+          <input type="number" class="form-control" id="edit-tx-count" min="0" placeholder="0" value="${p.txCount ?? ""}">
+        </div>
+        <div class="col-3">
           <label class="form-label small fw-bold">値引き</label>
-          <input type="number" class="form-control form-control-sm" id="edit-discount" min="0" value="${tx.payment?.discount || 0}">
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-discount" min="0" placeholder="0" value="${p.discount || 0}" oninput="recalcEditFinalTotal()">
+          </div>
         </div>
-        <div class="mb-2">
+        <div class="col-3">
+          <label class="form-label small fw-bold">値引き後の合計</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control bg-light" id="edit-final-total" min="0" placeholder="0" readonly>
+          </div>
+        </div>
+
+        <div class="col-6">
           <label class="form-label small fw-bold">客単価</label>
-          <input type="number" class="form-control form-control-sm" id="edit-cup" min="0" value="${tx.payment?.customerUnitPrice ?? ""}">
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-cup" min="0" placeholder="0" value="${p.customerUnitPrice ?? ""}">
+          </div>
         </div>
-        <div class="mb-2">
+        <div class="col-6">
           <label class="form-label small fw-bold">信計売上</label>
-          <input type="number" class="form-control form-control-sm" id="edit-cumsales" min="0" value="${tx.payment?.cumulativeSales ?? ""}">
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-cumsales" min="0" placeholder="0" value="${p.cumulativeSales ?? ""}" oninput="updateEditCashBalance()">
+          </div>
         </div>
-        <div class="mb-2">
+        <div class="col-4">
+          <label class="form-label small fw-bold">現金売上</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}">
+          </div>
+        </div>
+        <div class="col-4">
+          <label class="form-label small fw-bold">合計（２）</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-total2" min="0" placeholder="0" value="${p.total2 ?? ""}">
+          </div>
+        </div>
+        <div class="col-4">
+          <label class="form-label small fw-bold">合計（３）理論在高</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-registerbalance" min="0" placeholder="0" value="${p.cashBalance ?? ""}">
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <label class="form-label small fw-bold mb-0"><i class="fa-solid fa-arrow-down me-1 text-success"></i>入金</label>
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="addEditCashRow('income')">
+              <i class="fa-solid fa-plus me-1"></i>追加
+            </button>
+          </div>
+          <div id="edit-income-container"></div>
+        </div>
+
+        <div class="col-12">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <label class="form-label small fw-bold mb-0"><i class="fa-solid fa-arrow-up me-1 text-danger"></i>出金</label>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="addEditCashRow('expense')">
+              <i class="fa-solid fa-plus me-1"></i>追加
+            </button>
+          </div>
+          <div id="edit-expense-container"></div>
+          <div class="d-flex justify-content-end align-items-center mt-2">
+            <span class="small fw-bold me-2 text-danger">出金合計</span>
+            <div class="input-group input-group-sm" style="width:160px">
+              <span class="input-group-text">¥</span>
+              <input type="number" class="form-control bg-light text-danger fw-bold" id="edit-expense-total" readonly placeholder="0">
+            </div>
+          </div>
+          <div class="d-flex justify-content-end align-items-center mt-2">
+            <span class="small fw-bold me-2 text-primary">現金残高</span>
+            <div class="input-group input-group-sm" style="width:160px">
+              <span class="input-group-text">¥</span>
+              <input type="number" class="form-control bg-light text-primary fw-bold" id="edit-cash-balance" readonly placeholder="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
           <label class="form-label small fw-bold">メモ</label>
-          <textarea class="form-control form-control-sm" id="edit-notes" rows="2">${esc(tx.notes || "")}</textarea>
+          <textarea class="form-control" id="edit-notes" rows="2" placeholder="任意のメモ">${esc(tx.notes || "")}</textarea>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <label class="form-label small fw-bold mb-0">出金内訳</label>
-          <button type="button" class="btn btn-sm btn-outline-danger" onclick="addEditCashRow('expense')">
-            <i class="fa-solid fa-plus me-1"></i>追加
-          </button>
-        </div>
-        <div id="edit-expense-container" class="mb-3"></div>
+    </form>`;
 
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <label class="form-label small fw-bold mb-0">入金内訳</label>
-          <button type="button" class="btn btn-sm btn-outline-success" onclick="addEditCashRow('income')">
-            <i class="fa-solid fa-plus me-1"></i>追加
-          </button>
-        </div>
-        <div id="edit-income-container"></div>
-      </div>
-    </div>`;
-
+  renderEditItems();
   renderEditCash("expense");
   renderEditCash("income");
+  recalcEditFinalTotal();
 }
 
+// ------------------------------------------------------------
+// 編集: 明細
+// ------------------------------------------------------------
+function addEditItem() {
+  editReceiptItems.push({ name: "", quantity: 1, unitPrice: 0, subtotal: 0 });
+  renderEditItems();
+}
+function removeEditItem(i) { editReceiptItems.splice(i, 1); renderEditItems(); }
+function updateEditItem(i, field, val) {
+  editReceiptItems[i][field] = val;
+  recalcEditItemTotals();
+}
+function renderEditItems() {
+  const el = document.getElementById("edit-items-container");
+  el.innerHTML = editReceiptItems.map((item, i) => `
+    <div class="row g-2 mb-2 align-items-center">
+      <div class="col-5">
+        <input type="text" class="form-control form-control-sm" placeholder="品名"
+          value="${esc(item.name)}" oninput="updateEditItem(${i},'name',this.value)">
+      </div>
+      <div class="col-3">
+        <input type="number" class="form-control form-control-sm" placeholder="数量" min="0"
+          value="${item.quantity ?? ""}" oninput="updateEditItem(${i},'quantity',+this.value)">
+      </div>
+      <div class="col-3">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">¥</span>
+          <input type="number" class="form-control" placeholder="小計" min="0"
+            value="${item.subtotal ?? item.unitPrice ?? ""}" oninput="updateEditItem(${i},'subtotal',+this.value)">
+        </div>
+      </div>
+      <div class="col-1 text-end">
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEditItem(${i})">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+  `).join("") || `<div class="text-muted small">なし</div>`;
+  recalcEditItemTotals();
+}
+function recalcEditItemTotals() {
+  const subtotal = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
+  const totalQty = editReceiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const elS = document.getElementById("edit-subtotal");   if (elS) elS.value = subtotal;
+  const elQ = document.getElementById("edit-total-qty");  if (elQ) elQ.value = totalQty;
+}
+
+// ------------------------------------------------------------
+// 編集: 値引き後の合計 / 現金残高
+// ------------------------------------------------------------
+function recalcEditFinalTotal() {
+  const total    = Number(document.getElementById("edit-total")?.value)    || 0;
+  const discount = Number(document.getElementById("edit-discount")?.value) || 0;
+  const el = document.getElementById("edit-final-total");
+  if (el) el.value = Math.max(0, total - discount);
+  updateEditCashBalance();
+}
+function updateEditCashBalance() {
+  const finalTotal      = Number(document.getElementById("edit-final-total")?.value)   || 0;
+  const cumulativeSales = Number(document.getElementById("edit-cumsales")?.value)      || 0;
+  const expenseTotal    = Number(document.getElementById("edit-expense-total")?.value) || 0;
+  const el = document.getElementById("edit-cash-balance");
+  if (el) el.value = finalTotal - (cumulativeSales + expenseTotal) || "";
+}
+
+// ------------------------------------------------------------
+// 編集: 入金 / 出金
+// ------------------------------------------------------------
 function addEditCashRow(type) {
   const list = type === "income" ? editIncomeItems : editExpenseItems;
   list.push({ name: "", amount: 0 });
@@ -1109,10 +1269,18 @@ function removeEditCashRow(type, i) {
 function updateEditCashRow(type, i, field, val) {
   const list = type === "income" ? editIncomeItems : editExpenseItems;
   list[i][field] = val;
+  if (type === "expense") updateEditExpenseTotal();
+}
+function updateEditExpenseTotal() {
+  const total = editExpenseItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const el = document.getElementById("edit-expense-total");
+  if (el) el.value = total || "";
+  updateEditCashBalance();
 }
 function renderEditCash(type) {
   const list  = type === "income" ? editIncomeItems : editExpenseItems;
   const el    = document.getElementById(`edit-${type}-container`);
+  if (type === "expense") updateEditExpenseTotal();
   const color = type === "income" ? "success" : "danger";
   el.innerHTML = list.map((row, i) => `
     <div class="row g-2 mb-2 align-items-center">
@@ -1154,19 +1322,28 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
   const date = document.getElementById("edit-date").value;
   if (!date) { showToast("日付を入力してください", "warning"); return; }
 
-  const cupVal = document.getElementById("edit-cup").value;
-  const csVal  = document.getElementById("edit-cumsales").value;
+  const val = id => {
+    const v = document.getElementById(id).value;
+    return v === "" ? null : Number(v);
+  };
 
   const update = {
     receiptDate: date,
     store:    { ...(activeTx.store || {}), name: document.getElementById("edit-store").value.trim() },
+    items:    editReceiptItems.map(i => ({ ...i })),
     category: document.getElementById("edit-category").value,
     payment: {
       ...(activeTx.payment || {}),
-      total:             Number(document.getElementById("edit-total").value)    || 0,
-      discount:          Number(document.getElementById("edit-discount").value) || 0,
-      customerUnitPrice: cupVal === "" ? null : Number(cupVal),
-      cumulativeSales:   csVal  === "" ? null : Number(csVal),
+      subtotal:          Number(document.getElementById("edit-subtotal").value)  || 0,
+      total:             Number(document.getElementById("edit-total").value)     || 0,
+      totalQty:          Number(document.getElementById("edit-total-qty").value) || 0,
+      txCount:           val("edit-tx-count")        ?? 0,
+      discount:          Number(document.getElementById("edit-discount").value)  || 0,
+      customerUnitPrice: val("edit-cup"),
+      cumulativeSales:   val("edit-cumsales"),
+      cashSales:         val("edit-cashsales"),
+      total2:            val("edit-total2"),
+      cashBalance:       val("edit-registerbalance"),
     },
     expenses:   editExpenseItems.filter(r => r.name || r.amount),
     income:     editIncomeItems.filter(r => r.name || r.amount),
