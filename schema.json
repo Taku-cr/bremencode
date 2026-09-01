@@ -101,6 +101,11 @@
 
         "tags":       { "type": "array", "items": { "type": "string" } },
         "notes":      { "type": "string" },
+        "consistencyIssues": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "LINE取込時の整合性チェック結果（合計(１)と合計(２)、理論在高の計算値との不一致など）。空配列なら問題なし"
+        },
         "isVerified": { "type": "boolean", "description": "ユーザーが内容を確認・修正したか" },
         "createdAt":  { "description": "Firestore Timestamp" },
         "updatedAt":  { "description": "Firestore Timestamp" }

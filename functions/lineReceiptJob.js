@@ -8,7 +8,31 @@ function yen(n) {
   return `¥${Number(n || 0).toLocaleString()}`;
 }
 
-function formatReceiptSummary(a) {
+// ④整合性チェック: レシート内部で本来一致するはずの金額同士を突き合わせる。
+// ・合計(１)（売上高(税込)-値引き）と合計(２)（決済手段内訳の合計）は通常同額
+// ・合計(３)理論在高は、現金売上+入金-出金から計算した値と一致するはず
+// 端数の丸め差は許容し、¥1超のズレだけを不整合として報告する。
+function checkConsistency(analysis) {
+  const p = analysis.payment || {};
+  const issues = [];
+
+  const total1 = (Number(p.total) || 0) - (Number(p.discount) || 0);
+  if (p.total2 != null && Math.abs(total1 - Number(p.total2)) > 1) {
+    issues.push(`合計(１) ${yen(total1)} と合計(２) ${yen(p.total2)} が一致しません`);
+  }
+
+  if (p.cashBalance != null && p.cashSales != null) {
+    const expectedBalance = (Number(p.cashSales) || 0) + (Number(p.cashIn) || 0) - (Number(p.cashOut) || 0);
+    if (Math.abs(expectedBalance - Number(p.cashBalance)) > 1) {
+      issues.push(`合計(３)理論在高 ${yen(p.cashBalance)} が、現金売上+入金-出金の計算値 ${yen(expectedBalance)} と一致しません`);
+    }
+  }
+
+  return issues;
+}
+
+// ⑤結果通知: チェック結果に応じて確定/修正依頼のメッセージを組み立てる。
+function formatReceiptSummary(a, issues) {
   const p = a.payment || {};
   const lines = ["レシートを解析しました🧾"];
   lines.push(`店舗: ${a.store?.name || "不明"}`);
@@ -34,7 +58,14 @@ function formatReceiptSummary(a) {
   lines.push(`出金: ${yen(p.cashOut)}`);
   lines.push(`合計(３)理論在高: ${yen(p.cashBalance)}`);
   lines.push("");
-  lines.push("取引として自動保存しました。内容の確認・修正はアプリの「取引一覧」から行ってください。");
+  if (issues.length === 0) {
+    lines.push("✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。");
+  } else {
+    lines.push("⚠️ 金額に不整合があります。修正をお願いします:");
+    issues.forEach(i => lines.push(`・${i}`));
+  }
+  lines.push("");
+  lines.push("内容の確認・修正はアプリの「取引一覧」から行ってください。");
   if (Number(p.cashOut) > 0) {
     const count = Math.max(1, Number(p.cashOutCount) || 1);
     lines.push("");
@@ -60,7 +91,7 @@ function buildDownloadUrl(bucketName, storagePath, token) {
 }
 
 // 保存した取引のIDを返す（出金ヒアリングの結果を後から書き戻すために使う）
-async function saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath) {
+async function saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath, issues = []) {
   const items = analysis.items || [];
   const p     = analysis.payment || {};
 
@@ -94,6 +125,7 @@ async function saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath)
     weather:  null,
     receipt:  { imageUrl, storagePath, ocrRawText: analysis.ocrRawText || null, confidence: analysis.confidence ?? null },
     notes:      "LINEから自動登録",
+    consistencyIssues: issues,
     isVerified: false,
     createdAt:  admin.firestore.FieldValue.serverTimestamp(),
     updatedAt:  admin.firestore.FieldValue.serverTimestamp()
@@ -180,14 +212,16 @@ async function processLineReceiptJob(job) {
     let resultMessage;
     try {
       analysis = await analyzeReceiptImageBuffer(buffer, finalContentType);
-      resultMessage = formatReceiptSummary(analysis);
+      const issues = checkConsistency(analysis);
+      resultMessage = formatReceiptSummary(analysis, issues);
+      analysis.__issues = issues; // 保存時に再利用（同じチェックを二度計算しない）
     } catch (err) {
       logger.error("LINEコンテンツのAI解析に失敗しました", err);
       resultMessage = "解析できません。もう一度送信し直してください。";
     }
 
     if (analysis) {
-      const transactionId = await saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath);
+      const transactionId = await saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath, analysis.__issues);
       const p = analysis.payment || {};
       if (Number(p.cashOut) > 0) {
         await startExpenseDialog({
@@ -207,4 +241,4 @@ async function processLineReceiptJob(job) {
   }
 }
 
-module.exports = { processLineReceiptJob, handleExpenseDialogReply, saveTransactionFromAnalysis, buildDownloadUrl };
+module.exports = { processLineReceiptJob, handleExpenseDialogReply, checkConsistency, saveTransactionFromAnalysis, buildDownloadUrl };
