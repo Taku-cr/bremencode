@@ -1389,17 +1389,51 @@ document.getElementById("btn-delete-tx").addEventListener("click", async () => {
 });
 
 // ============================================================
-// Excelエクスポート
+// Excelエクスポート共通: 締め日ユーティリティ（21日〜翌20日を1期間とする）
+// 売上・現金・仕入帳の3つのExcel出力すべてでこの期間区切りを使う
 // ============================================================
+const toLocalStr = d =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+function periodStartOf(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return d >= 21 ? new Date(y, m - 1, 21) : new Date(y, m - 2, 21);
+}
+
+// dates: "YYYY-MM-DD" 文字列の配列 → 各々が属する21日〜翌20日の期間を、早い順に
+// [{ start, end, sheetName }, ...] として返す
+function getBillingPeriods(dates) {
+  const map = new Map();
+  dates.forEach(ds => {
+    const ps  = periodStartOf(ds);
+    const key = toLocalStr(ps);
+    if (!map.has(key)) map.set(key, ps);
+  });
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, start]) => {
+      const end       = new Date(start.getFullYear(), start.getMonth() + 1, 20);
+      const sheetName = `${start.getMonth()+1}.${start.getDate()}-${end.getMonth()+1}.${end.getDate()}`;
+      return { start, end, sheetName };
+    });
+}
+
+// 現金出納帳シートの末尾に「113,500円との差額」照合行を1行追加する（5列想定）
+function appendCashCheckRow(ws, thin, diff) {
+  const row = ws.addRow(["", "照合（113,500円との差額）", "", "", diff]);
+  ws.getCell(row.number, 2).font = { bold: true };
+  ws.getCell(row.number, 5).font = { bold: true, color: { argb: diff === 0 ? "FF2E7D32" : "FFC62828" } };
+  for (let c = 1; c <= 5; c++) {
+    ws.getCell(row.number, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+  }
+}
+
 async function exportToExcel() {
   if (!allTxs.length) { showToast("エクスポートするデータがありません", "warning"); return; }
 
   const DAYS      = ["日", "月", "火", "水", "木", "金", "土"];
   const PROD_COLS = ["調理パン", "焼きこみ", "菓子パン", "焼き菓子", "フランスパン", "デニッシュ", "ブレッド", "ジュース", "コーヒー", "未登録商品", "その他"];
   const HEADERS   = ["月日", "曜日", "気温", "天気", "コメント", "個数", "客単価", "客数", "売上", "入金", "同志社", "bremen合計", "①売上合計", "値引き", ...PROD_COLS, "②売上合計"];
-
-  const toLocalStr = d =>
-    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 
   const byDate = {};
   allTxs.forEach(tx => {
@@ -1408,26 +1442,11 @@ async function exportToExcel() {
     byDate[k].push(tx);
   });
 
-  const periodStartOf = dateStr => {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    return d >= 21 ? new Date(y, m - 1, 21) : new Date(y, m - 2, 21);
-  };
-
-  const periodMap = new Map();
-  Object.keys(byDate).forEach(ds => {
-    const ps  = periodStartOf(ds);
-    const key = toLocalStr(ps);
-    if (!periodMap.has(key)) periodMap.set(key, ps);
-  });
-
   const wb   = new ExcelJS.Workbook();
   const thin = { style: "thin" };
 
-  [...periodMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([, start]) => {
-      const end       = new Date(start.getFullYear(), start.getMonth() + 1, 20);
-      const sheetName = `${start.getMonth()+1}.${start.getDate()}-${end.getMonth()+1}.${end.getDate()}`;
+  getBillingPeriods(Object.keys(byDate))
+    .forEach(({ start, end, sheetName }) => {
       const ws        = wb.addWorksheet(sheetName);
 
       ws.addRow(HEADERS);
@@ -1520,38 +1539,37 @@ async function exportToCashExcel() {
     if (!byDate[k]) byDate[k] = [];
     byDate[k].push(tx);
   });
-  const sortedDates = Object.keys(byDate).sort();
-
-  // 全データ行を収集
-  const rows = [];
-  sortedDates.forEach(ds => {
-    const txs = byDate[ds];
-    const d   = new Date(ds + "T00:00:00");
+  // 1日分のレジャー行（売上・クレジット/電子マネー・出金各行・京信への入金）を組み立てる
+  const buildRowsForDate = ds => {
+    const txs   = byDate[ds] || [];
+    const d     = new Date(ds + "T00:00:00");
     const label = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+    const out   = [];
     txs.forEach(tx => {
       const finalTotal = (tx.payment?.total || 0) - (tx.payment?.discount || 0);
       const cumSales   = tx.payment?.cumulativeSales || 0;
       const expTotal   = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       // 京信への入金額はレシートに印字された「合計（３）理論在高」をそのまま使う
       // （他の数字からの逆算にすると必ず帳尻が合ってしまい、照合チェックとして機能しないため）
-      const cashBal    = tx.payment?.cashBalance ?? (finalTotal - cumSales - expTotal);
-      rows.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
-      rows.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
+      const cashBal = tx.payment?.cashBalance ?? (finalTotal - cumSales - expTotal);
+      out.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
+      out.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
       (tx.expenses || []).forEach(exp => {
         const amt = Number(exp.amount) || 0;
-        if (amt > 0) rows.push({ label, desc: exp.name || "出金", incomeAmt: 0, expenseAmt: amt, delta: -amt });
+        if (amt > 0) out.push({ label, desc: exp.name || "出金", incomeAmt: 0, expenseAmt: amt, delta: -amt });
       });
-      rows.push({ label, desc: "京信へ",               incomeAmt: 0,          expenseAmt: cashBal,  delta: -cashBal    });
+      out.push({ label, desc: "京信へ",               incomeAmt: 0,          expenseAmt: cashBal,  delta: -cashBal    });
     });
-  });
+    return out;
+  };
 
   const ROWS_PER_SHEET = 35; // row3=ヘッダー, row4=先月繰越, row5-39=データ, row40=合計
-  const wb  = new ExcelJS.Workbook();
+  const CASH_FLOAT = 113500;
+  const wb   = new ExcelJS.Workbook();
   const thin = { style: "thin" };
 
-  const buildSheet = (sheetNum, startBal, sheetRows) => {
-    const name = sheetNum === 1 ? "現金出納帳" : `現金出納帳${sheetNum}`;
-    const ws   = wb.addWorksheet(name);
+  const buildSheet = (name, startBal, sheetRows) => {
+    const ws = wb.addWorksheet(name);
     ws.columns = [
       { width: 14 }, { width: 22 }, { width: 14 }, { width: 14 }, { width: 14 },
     ];
@@ -1579,33 +1597,46 @@ async function exportToCashExcel() {
     return { balance, ws };
   };
 
-  let startBal = 113500, lastWs;
-  if (rows.length === 0) {
-    ({ balance: startBal, ws: lastWs } = buildSheet(1, startBal, []));
+  // 期間（21日〜翌20日）ごとにシートを分け、残高は期間をまたいで通しで繰り越す。
+  // 各期間の最終シートに、その期間末時点で113,500円と一致するかの照合行を付ける。
+  const periods = getBillingPeriods(Object.keys(byDate).filter(Boolean));
+  let carryBal = CASH_FLOAT;
+  const results = [];
+
+  if (!periods.length) {
+    const { ws } = buildSheet("現金出納帳", carryBal, []);
+    appendCashCheckRow(ws, thin, 0);
+    results.push({ sheetName: "現金出納帳", diff: 0 });
   } else {
-    let pageNum = 1;
-    for (let i = 0; i < rows.length; i += ROWS_PER_SHEET) {
-      ({ balance: startBal, ws: lastWs } = buildSheet(pageNum, startBal, rows.slice(i, i + ROWS_PER_SHEET)));
-      pageNum++;
-    }
+    periods.forEach(({ start, end, sheetName }) => {
+      const periodRows = [];
+      const cur = new Date(start);
+      while (cur <= end) {
+        periodRows.push(...buildRowsForDate(toLocalStr(cur)));
+        cur.setDate(cur.getDate() + 1);
+      }
+      if (!periodRows.length) return; // データが無い期間はシートを作らない
+
+      let pageNum = 1, lastWs = null, pageBal = carryBal;
+      for (let i = 0; i < periodRows.length; i += ROWS_PER_SHEET) {
+        const name = pageNum === 1 ? sheetName : `${sheetName}-${pageNum}`;
+        ({ balance: pageBal, ws: lastWs } = buildSheet(name, pageBal, periodRows.slice(i, i + ROWS_PER_SHEET)));
+        pageNum++;
+      }
+      carryBal = pageBal;
+
+      const diff = carryBal - CASH_FLOAT;
+      appendCashCheckRow(lastWs, thin, diff);
+      results.push({ sheetName, diff });
+    });
   }
 
-  // 照合チェック（113,500円との突合）: 最終残高が開始残高（＝レジの標準有り高）と
-  // 一致していれば、その期間の現金の流れに矛盾は無いということになる
-  const CASH_FLOAT = 113500;
-  const diff = startBal - CASH_FLOAT;
-  const checkRow = lastWs.addRow(["", "照合（113,500円との差額）", "", "", diff]);
-  lastWs.getCell(checkRow.number, 2).font = { bold: true };
-  lastWs.getCell(checkRow.number, 5).font = { bold: true, color: { argb: diff === 0 ? "FF2E7D32" : "FFC62828" } };
-  for (let c = 1; c <= 5; c++) {
-    lastWs.getCell(checkRow.number, c).border = { top: thin, bottom: thin, left: thin, right: thin };
-  }
-
+  const mismatches = results.filter(r => r.diff !== 0);
   showToast(
-    diff === 0
-      ? "照合チェック: 現金残高が113,500円と一致しました"
-      : `照合チェック: 現金残高が113,500円と一致しません（差額 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}円）`,
-    diff === 0 ? "success" : "warning"
+    mismatches.length === 0
+      ? "照合チェック: すべての期間で現金残高が113,500円と一致しました"
+      : `照合チェック: ${mismatches.map(m => `${m.sheetName}（差額 ${m.diff > 0 ? "+" : ""}${m.diff.toLocaleString()}円）`).join("、")} が一致しません`,
+    mismatches.length === 0 ? "success" : "warning"
   );
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -1636,50 +1667,61 @@ async function exportToPurchaseLedgerExcel() {
       (byDate[ds] = byDate[ds] || []).push({ name: exp.name || "出金", amount: amt });
     });
   });
-  const sortedDates = Object.keys(byDate).filter(Boolean).sort();
+  const dateKeys = Object.keys(byDate).filter(Boolean);
+  if (!dateKeys.length) { showToast("出金データがありません", "warning"); return; }
 
-  if (!sortedDates.length) { showToast("出金データがありません", "warning"); return; }
-
-  const wb  = new ExcelJS.Workbook();
-  const ws  = wb.addWorksheet("仕入帳");
+  const wb   = new ExcelJS.Workbook();
   const thin = { style: "thin" };
 
-  ws.columns = [
-    { width: 12 }, { width: 8 }, { width: 26 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 12 },
-  ];
-  ws.addRow(["日付", "コード", "会社名", "個数", "単価", "金額", "当日の金額合計"]);
-
-  let grandTotal = 0;
-  sortedDates.forEach(ds => {
-    const d     = new Date(ds + "T00:00:00");
-    const label = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
-    const rows  = byDate[ds];
-    const dayTotal = rows.reduce((s, r) => s + r.amount, 0);
-    grandTotal += dayTotal;
-
-    rows.forEach((r, i) => {
-      ws.addRow([
-        i === 0 ? label : "",
-        "",
-        r.name,
-        1,
-        r.amount,
-        r.amount,
-        i === rows.length - 1 ? dayTotal : "",
-      ]);
-    });
-  });
-
-  const totalRow = ws.addRow(["", "", "出金合計", "", "", "", grandTotal]);
-  totalRow.getCell(3).font = { bold: true };
-  totalRow.getCell(7).font = { bold: true };
-
-  for (let r = 1; r <= ws.rowCount; r++) {
-    for (let c = 1; c <= 7; c++) {
-      ws.getCell(r, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+  // 期間（21日〜翌20日）ごとにシートを分ける
+  getBillingPeriods(dateKeys).forEach(({ start, end, sheetName }) => {
+    const periodDates = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const ds = toLocalStr(cur);
+      if (byDate[ds]) periodDates.push(ds);
+      cur.setDate(cur.getDate() + 1);
     }
-  }
-  ws.getRow(1).font = { bold: true };
+    if (!periodDates.length) return; // データが無い期間はシートを作らない
+
+    const ws = wb.addWorksheet(sheetName);
+    ws.columns = [
+      { width: 12 }, { width: 8 }, { width: 26 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 12 },
+    ];
+    ws.addRow(["日付", "コード", "会社名", "個数", "単価", "金額", "当日の金額合計"]);
+
+    let periodTotal = 0;
+    periodDates.forEach(ds => {
+      const d     = new Date(ds + "T00:00:00");
+      const label = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+      const rows  = byDate[ds];
+      const dayTotal = rows.reduce((s, r) => s + r.amount, 0);
+      periodTotal += dayTotal;
+
+      rows.forEach((r, i) => {
+        ws.addRow([
+          i === 0 ? label : "",
+          "",
+          r.name,
+          1,
+          r.amount,
+          r.amount,
+          i === rows.length - 1 ? dayTotal : "",
+        ]);
+      });
+    });
+
+    const totalRow = ws.addRow(["", "", "出金合計", "", "", "", periodTotal]);
+    totalRow.getCell(3).font = { bold: true };
+    totalRow.getCell(7).font = { bold: true };
+
+    for (let r = 1; r <= ws.rowCount; r++) {
+      for (let c = 1; c <= 7; c++) {
+        ws.getCell(r, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+      }
+    }
+    ws.getRow(1).font = { bold: true };
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
