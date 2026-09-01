@@ -1621,6 +1621,79 @@ async function exportToCashExcel() {
 }
 
 // ============================================================
+// 仕入帳（小口）
+// ============================================================
+async function exportToPurchaseLedgerExcel() {
+  if (!allTxs.length) { showToast("エクスポートするデータがありません", "warning"); return; }
+
+  // 日付ごとに出金（会社名・金額）をまとめる
+  const byDate = {};
+  allTxs.forEach(tx => {
+    const ds = tx.receiptDate || "";
+    (tx.expenses || []).forEach(exp => {
+      const amt = Number(exp.amount) || 0;
+      if (amt <= 0) return;
+      (byDate[ds] = byDate[ds] || []).push({ name: exp.name || "出金", amount: amt });
+    });
+  });
+  const sortedDates = Object.keys(byDate).filter(Boolean).sort();
+
+  if (!sortedDates.length) { showToast("出金データがありません", "warning"); return; }
+
+  const wb  = new ExcelJS.Workbook();
+  const ws  = wb.addWorksheet("仕入帳");
+  const thin = { style: "thin" };
+
+  ws.columns = [
+    { width: 12 }, { width: 8 }, { width: 26 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 12 },
+  ];
+  ws.addRow(["日付", "コード", "会社名", "個数", "単価", "金額", "当日の金額合計"]);
+
+  let grandTotal = 0;
+  sortedDates.forEach(ds => {
+    const d     = new Date(ds + "T00:00:00");
+    const label = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+    const rows  = byDate[ds];
+    const dayTotal = rows.reduce((s, r) => s + r.amount, 0);
+    grandTotal += dayTotal;
+
+    rows.forEach((r, i) => {
+      ws.addRow([
+        i === 0 ? label : "",
+        "",
+        r.name,
+        1,
+        r.amount,
+        r.amount,
+        i === rows.length - 1 ? dayTotal : "",
+      ]);
+    });
+  });
+
+  const totalRow = ws.addRow(["", "", "出金合計", "", "", "", grandTotal]);
+  totalRow.getCell(3).font = { bold: true };
+  totalRow.getCell(7).font = { bold: true };
+
+  for (let r = 1; r <= ws.rowCount; r++) {
+    for (let c = 1; c <= 7; c++) {
+      ws.getCell(r, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+    }
+  }
+  ws.getRow(1).font = { bold: true };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement("a");
+  a.href     = url;
+  a.download = "bremen_仕入帳.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
 // 予算
 // ============================================================
 function loadBudget() {
