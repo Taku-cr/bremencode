@@ -1532,7 +1532,9 @@ async function exportToCashExcel() {
       const finalTotal = (tx.payment?.total || 0) - (tx.payment?.discount || 0);
       const cumSales   = tx.payment?.cumulativeSales || 0;
       const expTotal   = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      const cashBal    = finalTotal - cumSales - expTotal;
+      // 京信への入金額はレシートに印字された「合計（３）理論在高」をそのまま使う
+      // （他の数字からの逆算にすると必ず帳尻が合ってしまい、照合チェックとして機能しないため）
+      const cashBal    = tx.payment?.cashBalance ?? (finalTotal - cumSales - expTotal);
       rows.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
       rows.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
       (tx.expenses || []).forEach(exp => {
@@ -1574,18 +1576,37 @@ async function exportToCashExcel() {
         ws.getCell(r, c).border = { top: thin, bottom: thin, left: thin, right: thin };
       }
     }
-    return balance;
+    return { balance, ws };
   };
 
+  let startBal = 113500, lastWs;
   if (rows.length === 0) {
-    buildSheet(1, 113500, []);
+    ({ balance: startBal, ws: lastWs } = buildSheet(1, startBal, []));
   } else {
-    let pageNum = 1, startBal = 113500;
+    let pageNum = 1;
     for (let i = 0; i < rows.length; i += ROWS_PER_SHEET) {
-      startBal = buildSheet(pageNum, startBal, rows.slice(i, i + ROWS_PER_SHEET));
+      ({ balance: startBal, ws: lastWs } = buildSheet(pageNum, startBal, rows.slice(i, i + ROWS_PER_SHEET)));
       pageNum++;
     }
   }
+
+  // 照合チェック（113,500円との突合）: 最終残高が開始残高（＝レジの標準有り高）と
+  // 一致していれば、その期間の現金の流れに矛盾は無いということになる
+  const CASH_FLOAT = 113500;
+  const diff = startBal - CASH_FLOAT;
+  const checkRow = lastWs.addRow(["", "照合（113,500円との差額）", "", "", diff]);
+  lastWs.getCell(checkRow.number, 2).font = { bold: true };
+  lastWs.getCell(checkRow.number, 5).font = { bold: true, color: { argb: diff === 0 ? "FF2E7D32" : "FFC62828" } };
+  for (let c = 1; c <= 5; c++) {
+    lastWs.getCell(checkRow.number, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+  }
+
+  showToast(
+    diff === 0
+      ? "照合チェック: 現金残高が113,500円と一致しました"
+      : `照合チェック: 現金残高が113,500円と一致しません（差額 ${diff > 0 ? "+" : ""}${diff.toLocaleString()}円）`,
+    diff === 0 ? "success" : "warning"
+  );
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
