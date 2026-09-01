@@ -1439,7 +1439,7 @@ async function exportToExcel() {
 
         const weather    = txs.find(t => t.weather)?.weather;
         const notes      = [...new Set(txs.map(t => t.notes).filter(Boolean))].join("、");
-        const totalSales = txs.reduce((s, t) => s + (t.payment?.total    || 0), 0);
+        const totalSales = txs.reduce((s, t) => s + ((t.payment?.total || 0) - (t.payment?.discount || 0)), 0);
         const discount   = txs.reduce((s, t) => s + (t.payment?.discount || 0), 0);
         const txCount    = txs.reduce((s, t) => s + (t.payment?.txCount  || 0), 0);
         const totalQty   = txs.reduce((s, t) =>
