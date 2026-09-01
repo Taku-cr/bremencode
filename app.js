@@ -1042,7 +1042,8 @@ function renderTxEditForm(tx) {
       <div class="row g-3">
         <div class="col-6">
           <label class="form-label small fw-bold">取引日 *</label>
-          <input type="date" class="form-control" id="edit-date" value="${tx.receiptDate || ""}" required>
+          <input type="text" class="form-control" id="edit-date" value="${esc(tx.receiptDate || "")}" required
+            placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" inputmode="numeric">
         </div>
         <div class="col-6">
           <label class="form-label small fw-bold">カテゴリ</label>
@@ -1319,8 +1320,12 @@ document.getElementById("btn-cancel-edit-tx").addEventListener("click", () => {
 document.getElementById("btn-save-tx").addEventListener("click", async () => {
   if (!activeTxId || !activeTx) return;
 
-  const date = document.getElementById("edit-date").value;
+  const date = document.getElementById("edit-date").value.trim();
   if (!date) { showToast("日付を入力してください", "warning"); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    showToast("日付はYYYY-MM-DD形式で入力してください（例: 2026-05-21）", "warning");
+    return;
+  }
 
   const val = id => {
     const v = document.getElementById(id).value;
