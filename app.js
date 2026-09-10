@@ -956,7 +956,8 @@ function setTxModalMode(mode) {
 function renderTxDetailView(tx) {
   const cat          = CATEGORIES[tx.category] || CATEGORIES.other;
   const expenseTotal = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  const finalTotal   = (tx.payment?.total || 0) - (tx.payment?.discount || 0);
+  // 合計(１)＝各種売上（明細の合計）－値引き
+  const finalTotal   = itemsTotal(tx.items) - (tx.payment?.discount || 0);
   const cashBalance  = finalTotal - ((tx.payment?.cumulativeSales || 0) + expenseTotal);
   const body         = document.getElementById("modal-tx-body");
 
@@ -1091,7 +1092,7 @@ function renderTxEditForm(tx) {
           <label class="form-label small fw-bold">合計（税込み合計）*</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-total" min="0" placeholder="0" value="${p.total || 0}" required oninput="recalcEditFinalTotal()">
+            <input type="number" class="form-control" id="edit-total" min="0" placeholder="0" value="${p.total || 0}" required>
           </div>
         </div>
 
@@ -1246,16 +1247,18 @@ function recalcEditItemTotals() {
   const totalQty = editReceiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
   const elS = document.getElementById("edit-subtotal");   if (elS) elS.value = subtotal;
   const elQ = document.getElementById("edit-total-qty");  if (elQ) elQ.value = totalQty;
+  recalcEditFinalTotal();
 }
 
 // ------------------------------------------------------------
 // 編集: 値引き後の合計 / 現金残高
+// 合計(１)＝各種売上（明細の合計＝小計）－値引き、として算出する
 // ------------------------------------------------------------
 function recalcEditFinalTotal() {
-  const total    = Number(document.getElementById("edit-total")?.value)    || 0;
-  const discount = Number(document.getElementById("edit-discount")?.value) || 0;
+  const subtotal = Number(document.getElementById("edit-subtotal")?.value)  || 0;
+  const discount  = Number(document.getElementById("edit-discount")?.value) || 0;
   const el = document.getElementById("edit-final-total");
-  if (el) el.value = Math.max(0, total - discount);
+  if (el) el.value = Math.max(0, subtotal - discount);
   updateEditCashBalance();
 }
 function updateEditCashBalance() {
@@ -1479,7 +1482,8 @@ async function exportToExcel() {
 
         const weather    = txs.find(t => t.weather)?.weather;
         const notes      = [...new Set(txs.map(t => t.notes).filter(Boolean))].join("、");
-        const totalSales = txs.reduce((s, t) => s + ((t.payment?.total || 0) - (t.payment?.discount || 0)), 0);
+        // 合計(１)＝各種売上（明細の合計）－値引き、を取引ごとに算出して日計する
+        const totalSales = txs.reduce((s, t) => s + (itemsTotal(t.items) - (t.payment?.discount || 0)), 0);
         const discount   = txs.reduce((s, t) => s + (t.payment?.discount || 0), 0);
         const txCount    = txs.reduce((s, t) => s + (t.payment?.txCount  || 0), 0);
         const totalQty   = txs.reduce((s, t) =>
@@ -1567,7 +1571,8 @@ async function exportToCashExcel() {
     const label = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
     const out   = [];
     txs.forEach(tx => {
-      const finalTotal = (tx.payment?.total || 0) - (tx.payment?.discount || 0);
+      // 合計(１)＝各種売上（明細の合計）－値引き
+      const finalTotal = itemsTotal(tx.items) - (tx.payment?.discount || 0);
       const cumSales   = tx.payment?.cumulativeSales || 0;
       const expTotal   = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       // 京信への入金額はレシートに印字された「合計（３）理論在高」をそのまま使う
@@ -2155,6 +2160,13 @@ async function deleteInvoice(id) {
 // ============================================================
 // ユーティリティ
 // ============================================================
+// 合計(１) = 各種売上（調理パン・焼きこみ・菓子パン・デニッシュ・フランスパン・ブレッド・
+// 焼き菓子・ジュース・コーヒー・その他・未登録商品）を合わせた金額 − 値引き、として算出する。
+// 部門ごとの仕分けは表示上のことで、全明細を単純合計すれば同じ値になるためこれで足りる。
+function itemsTotal(items) {
+  return (items || []).reduce((s, it) => s + (Number(it.subtotal) || Number(it.unitPrice) || 0), 0);
+}
+
 function fmtCurrency(amount) {
   if (appSettings.currency === "USD") return "$" + (amount / 100).toFixed(2);
   return "¥" + Math.round(amount).toLocaleString();

@@ -8,15 +8,22 @@ function yen(n) {
   return `¥${Number(n || 0).toLocaleString()}`;
 }
 
+// 合計(１)＝各種売上（調理パン・焼きこみ・菓子パン・デニッシュ・フランスパン・ブレッド・
+// 焼き菓子・ジュース・コーヒー・その他・未登録商品）を合わせた金額－値引き、として算出する。
+// 部門ごとの仕分けは表示上のことで、明細（items）を単純合計すれば同じ値になる。
+function itemsTotal(items) {
+  return (items || []).reduce((s, it) => s + (Number(it.subtotal) || Number(it.unitPrice) || 0), 0);
+}
+
 // ④整合性チェック: レシート内部で本来一致するはずの金額同士を突き合わせる。
-// ・合計(１)（売上高(税込)-値引き）と合計(２)（決済手段内訳の合計）は通常同額
+// ・合計(１)（各種売上の合計-値引き）と合計(２)（決済手段内訳の合計）は通常同額
 // ・合計(３)理論在高は、現金売上+入金-出金から計算した値と一致するはず
 // 端数の丸め差は許容し、¥1超のズレだけを不整合として報告する。
 function checkConsistency(analysis) {
   const p = analysis.payment || {};
   const issues = [];
 
-  const total1 = (Number(p.total) || 0) - (Number(p.discount) || 0);
+  const total1 = itemsTotal(analysis.items) - (Number(p.discount) || 0);
   if (p.total2 != null && Math.abs(total1 - Number(p.total2)) > 1) {
     issues.push(`合計(１) ${yen(total1)} と合計(２) ${yen(p.total2)} が一致しません`);
   }
@@ -49,7 +56,7 @@ function formatReceiptSummary(a, issues) {
   lines.push(`組数: ${p.txCount ?? "-"}`);
   lines.push(`売上高(税込): ${yen(p.total)}`);
   lines.push(`値引き: ${yen(p.discount)}`);
-  lines.push(`合計(１): ${yen((Number(p.total) || 0) - (Number(p.discount) || 0))}`);
+  lines.push(`合計(１): ${yen(itemsTotal(a.items) - (Number(p.discount) || 0))}`);
   lines.push(`客単価: ${yen(p.customerUnitPrice)}`);
   lines.push(`現金売上: ${yen(p.cashSales)}`);
   lines.push(`信計売上: ${yen(p.cumulativeSales)}`);
@@ -252,4 +259,4 @@ async function processLineReceiptJob(job) {
   }
 }
 
-module.exports = { processLineReceiptJob, handleExpenseDialogReply, checkConsistency, saveTransactionFromAnalysis, buildDownloadUrl };
+module.exports = { processLineReceiptJob, handleExpenseDialogReply, checkConsistency, itemsTotal, saveTransactionFromAnalysis, buildDownloadUrl };

@@ -54,7 +54,7 @@
             "totalQty":          { "type": "number", "minimum": 0, "description": "総点数" },
             "txCount":           { "type": "number", "minimum": 0, "description": "組数" },
             "discount":          { "type": "number", "minimum": 0, "description": "値引き合計（正の数値）" },
-            "total":             { "type": "number", "minimum": 0, "description": "売上高（税込、値引き前）。値引き後の合計（１）は total - discount で算出する" },
+            "total":             { "type": "number", "minimum": 0, "description": "売上高（税込、値引き前）。合計（１）はこの値ではなく、items（各種売上＝部門別明細）の合計から算出する: sum(items[].subtotal || items[].unitPrice) - discount" },
             "customerUnitPrice": { "type": ["number", "null"], "description": "客単価" },
             "cumulativeSales":   { "type": ["number", "null"], "description": "信計売上" },
             "cashSales":         { "type": ["number", "null"], "description": "現金売上" },
