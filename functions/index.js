@@ -9,6 +9,7 @@ const { processLineReceiptJob }           = require("./lineReceiptJob");
 
 admin.initializeApp();
 setGlobalOptions({ region: "asia-northeast1" });
+// (デプロイ再試行のための無害な変更マーカー)
 
 // --------------------------------------------------------
 // analyzeReceipt

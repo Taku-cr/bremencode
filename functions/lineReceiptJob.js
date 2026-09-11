@@ -68,11 +68,13 @@ function formatReceiptSummary(a, issues) {
   if (issues.length === 0) {
     lines.push("✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。");
   } else {
-    lines.push("⚠️ 金額に不整合があります。修正をお願いします:");
+    lines.push("⚠️ 金額に不整合があります:");
     issues.forEach(i => lines.push(`・${i}`));
+    lines.push("");
+    lines.push("「対象 金額」の形式で送っていただければLINEから修正できます（例: 焼き菓子 1200）。「終了」で終われます。");
   }
   lines.push("");
-  lines.push("内容の確認・修正はアプリの「取引一覧」から行ってください。");
+  lines.push("内容の確認・修正はアプリの「取引一覧」からも行えます。");
   if (Number(p.cashOut) > 0) {
     const count = Math.max(1, Number(p.cashOutCount) || 1);
     lines.push("");
@@ -207,6 +209,103 @@ async function handleExpenseDialogReply(lineUserId, text, replyToken) {
   return true;
 }
 
+// 「対象 金額」の"対象"が payment のどのフィールドを指すかのエイリアス表。
+// マッチしなければ明細（items）の品目名として扱う。
+const CORRECTION_FIELD_ALIASES = {
+  "値引き": "discount",
+  "売上高": "total", "売上高(税込)": "total", "売上高（税込）": "total", "売上高税込": "total",
+  "信計売上": "cumulativeSales",
+  "現金売上": "cashSales",
+  "合計2": "total2", "合計２": "total2", "合計(2)": "total2", "合計(２)": "total2",
+  "理論在高": "cashBalance", "合計3": "cashBalance", "合計３": "cashBalance",
+  "合計(3)": "cashBalance", "合計(３)": "cashBalance", "合計(３)理論在高": "cashBalance",
+};
+const CORRECTION_CANCEL_WORDS = ["終了", "やめる", "スキップ", "キャンセル", "以上"];
+
+// 整合性チェックで不一致が出た取引について、LINEから直接修正できるようにする対話を開始する。
+async function startCorrectionDialog({ lineUserId, transactionId }) {
+  await admin.firestore().collection("lineCorrectionDialogs").doc(lineUserId).set({
+    transactionId,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+// LINEのテキスト返信を、進行中の金額修正（整合性チェックの不一致修正）への回答として処理する。
+// 「対象 金額」の対象は、値引き・売上高・信計売上などpaymentの主要項目か、明細の品目名。
+// 品目名が既存の明細に無ければ新規の明細として追加する。
+// 対話中でなければ false を返す（呼び出し側で通常のテキスト処理にフォールバックする）。
+async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
+  const ref  = admin.firestore().collection("lineCorrectionDialogs").doc(lineUserId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+
+  const dialog  = snap.data();
+  const trimmed = String(text || "").trim();
+
+  if (CORRECTION_CANCEL_WORDS.includes(trimmed)) {
+    await ref.delete();
+    await replyText(replyToken, "修正を終了しました。残りはアプリの「取引一覧」から編集してください。");
+    return true;
+  }
+
+  const corrections = parseExpenseLines(text); // 「対象 金額」も同じ書式なので同じパーサーを使う
+  if (corrections.length === 0) {
+    await replyText(replyToken, "「対象 金額」の形式で送ってください（例: 焼き菓子 1200）。「終了」と送ると修正をやめられます。");
+    return true;
+  }
+
+  const txRef  = admin.firestore().collection("transactions").doc(dialog.transactionId);
+  const txSnap = await txRef.get();
+  if (!txSnap.exists) {
+    await ref.delete();
+    await replyText(replyToken, "対象の取引が見つかりませんでした。アプリの「取引一覧」からご確認ください。");
+    return true;
+  }
+
+  const tx      = txSnap.data();
+  const items   = (tx.items || []).map(it => ({ ...it }));
+  const payment = { ...(tx.payment || {}) };
+  const applied = [];
+
+  corrections.forEach(({ name, amount }) => {
+    const field = CORRECTION_FIELD_ALIASES[name];
+    if (field) {
+      payment[field] = amount;
+      applied.push(`${name} → ${yen(amount)}`);
+      return;
+    }
+    const item = items.find(it => it.name === name);
+    if (item) {
+      item.subtotal = amount;
+      applied.push(`${name}（明細） → ${yen(amount)}`);
+    } else {
+      items.push({ name, quantity: 1, unitPrice: amount, subtotal: amount, category: "other" });
+      applied.push(`${name}（新規の明細として追加） → ${yen(amount)}`);
+    }
+  });
+
+  const issues = checkConsistency({ items, payment });
+  await txRef.update({
+    items, payment,
+    consistencyIssues: issues,
+    isVerified: issues.length === 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  const appliedList = applied.map(a => `・${a}`).join("\n");
+  if (issues.length === 0) {
+    await ref.delete();
+    await replyText(replyToken, `修正しました:\n${appliedList}\n\n✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。`);
+  } else {
+    await ref.update({ updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    await replyText(replyToken,
+      `修正しました:\n${appliedList}\n\n⚠️ まだ不整合があります:\n${issues.map(i => `・${i}`).join("\n")}\n\n引き続き「対象 金額」で修正するか、「終了」で終えられます。`
+    );
+  }
+  return true;
+}
+
 // lineWebhook がWebhook応答を返した後、Firestoreトリガー経由で非同期に実行される。
 // LINEのWebhook応答時間に縛られないため、Gemini解析がどれだけ時間を要しても再送は発生しない。
 async function processLineReceiptJob(job) {
@@ -247,6 +346,9 @@ async function processLineReceiptJob(job) {
           totalCount: p.cashOutCount, expectedTotal: p.cashOut
         });
       }
+      if (analysis.__issues && analysis.__issues.length > 0) {
+        await startCorrectionDialog({ lineUserId, transactionId });
+      }
     } else {
       // 解析に失敗した場合は保存せず、アップロード済みの画像も削除する
       await bucket.file(storagePath).delete().catch(() => {});
@@ -259,4 +361,4 @@ async function processLineReceiptJob(job) {
   }
 }
 
-module.exports = { processLineReceiptJob, handleExpenseDialogReply, checkConsistency, itemsTotal, saveTransactionFromAnalysis, buildDownloadUrl };
+module.exports = { processLineReceiptJob, handleExpenseDialogReply, handleCorrectionDialogReply, checkConsistency, itemsTotal, saveTransactionFromAnalysis, buildDownloadUrl };

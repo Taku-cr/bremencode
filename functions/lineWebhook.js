@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const admin  = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 const { replyText } = require("./lineClient");
-const { handleExpenseDialogReply } = require("./lineReceiptJob");
+const { handleExpenseDialogReply, handleCorrectionDialogReply } = require("./lineReceiptJob");
 
 function isValidSignature(rawBody, signature, channelSecret) {
   const hash = crypto
@@ -74,9 +74,12 @@ async function handleFileMessage(event) {
 async function handleEvent(event) {
   if (event.type !== "message") return;
   if (event.message.type === "text") {
-    // 出金の明細ヒアリング中なら、その回答として処理する（対話中でなければ従来通りオウム返し）
-    const handled = await handleExpenseDialogReply(event.source.userId, event.message.text, event.replyToken);
-    if (!handled) await replyText(event.replyToken, event.message.text);
+    const uid = event.source.userId, text = event.message.text, tok = event.replyToken;
+    // 出金の明細ヒアリング中、または整合性チェックの修正対話中なら、その回答として処理する
+    // （対話中でなければ従来通りオウム返し）
+    if (await handleExpenseDialogReply(uid, text, tok))    return;
+    if (await handleCorrectionDialogReply(uid, text, tok)) return;
+    await replyText(tok, text);
     return;
   }
   if (event.message.type === "image") { await handleImageMessage(event); return; }
