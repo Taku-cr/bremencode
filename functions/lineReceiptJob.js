@@ -75,7 +75,8 @@ function formatReceiptSummary(a, issues) {
   }
   lines.push("");
   lines.push("内容の確認・修正はアプリの「取引一覧」からも行えます。");
-  if (Number(p.cashOut) > 0) {
+  // 不整合の修正が残っている間は出金ヒアリングを始めない（修正が全部終わってから出金入力に入る）
+  if (issues.length === 0 && Number(p.cashOut) > 0) {
     const count = Math.max(1, Number(p.cashOutCount) || 1);
     lines.push("");
     lines.push(`出金が${count}件あります。品目と金額を教えてください（例: 電気代 3000円）。`);
@@ -223,12 +224,24 @@ const CORRECTION_FIELD_ALIASES = {
 const CORRECTION_CANCEL_WORDS = ["終了", "やめる", "スキップ", "キャンセル", "以上"];
 
 // 整合性チェックで不一致が出た取引について、LINEから直接修正できるようにする対話を開始する。
-async function startCorrectionDialog({ lineUserId, transactionId }) {
+// pendingExpense を渡すと、この修正がすべて終わってから出金ヒアリングを始める
+// （修正と出金入力を同時に走らせず、順番に片付ける）。
+async function startCorrectionDialog({ lineUserId, transactionId, pendingExpense }) {
   await admin.firestore().collection("lineCorrectionDialogs").doc(lineUserId).set({
     transactionId,
+    pendingExpense: pendingExpense || null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   });
+}
+
+// 修正対話の終了時（解決・キャンセルどちらも）に呼ぶ。保留していた出金ヒアリングがあれば
+// ここで開始し、その案内をメッセージに追記する。
+async function startPendingExpenseIfAny(lineUserId, dialog, baseMessage) {
+  if (!dialog.pendingExpense) return baseMessage;
+  await startExpenseDialog({ lineUserId, transactionId: dialog.transactionId, ...dialog.pendingExpense });
+  const count = Math.max(1, Number(dialog.pendingExpense.totalCount) || 1);
+  return `${baseMessage}\n\n出金が${count}件あります。品目と金額を教えてください（例: 電気代 3000円）。\n1件ずつでも、改行区切りでまとめて送っていただいても構いません。`;
 }
 
 // LINEのテキスト返信を、進行中の金額修正（整合性チェックの不一致修正）への回答として処理する。
@@ -245,7 +258,8 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
 
   if (CORRECTION_CANCEL_WORDS.includes(trimmed)) {
     await ref.delete();
-    await replyText(replyToken, "修正を終了しました。残りはアプリの「取引一覧」から編集してください。");
+    const msg = await startPendingExpenseIfAny(lineUserId, dialog, "修正を終了しました。残りはアプリの「取引一覧」から編集してください。");
+    await replyText(replyToken, msg);
     return true;
   }
 
@@ -296,7 +310,11 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
   const appliedList = applied.map(a => `・${a}`).join("\n");
   if (issues.length === 0) {
     await ref.delete();
-    await replyText(replyToken, `修正しました:\n${appliedList}\n\n✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。`);
+    const msg = await startPendingExpenseIfAny(
+      lineUserId, dialog,
+      `修正しました:\n${appliedList}\n\n✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。`
+    );
+    await replyText(replyToken, msg);
   } else {
     await ref.update({ updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     await replyText(replyToken,
@@ -340,14 +358,19 @@ async function processLineReceiptJob(job) {
     if (analysis) {
       const transactionId = await saveTransactionFromAnalysis(uid, analysis, imageUrl, storagePath, analysis.__issues);
       const p = analysis.payment || {};
-      if (Number(p.cashOut) > 0) {
-        await startExpenseDialog({
+      const hasExpense = Number(p.cashOut) > 0;
+      const hasIssues  = analysis.__issues && analysis.__issues.length > 0;
+      const expenseParams = { totalCount: p.cashOutCount, expectedTotal: p.cashOut };
+
+      // 不整合の修正が残っている間は出金ヒアリングを始めない。
+      // 修正が全部終わってから（startPendingExpenseIfAny経由で）出金入力に入る。
+      if (hasIssues) {
+        await startCorrectionDialog({
           lineUserId, transactionId,
-          totalCount: p.cashOutCount, expectedTotal: p.cashOut
+          pendingExpense: hasExpense ? expenseParams : null
         });
-      }
-      if (analysis.__issues && analysis.__issues.length > 0) {
-        await startCorrectionDialog({ lineUserId, transactionId });
+      } else if (hasExpense) {
+        await startExpenseDialog({ lineUserId, transactionId, ...expenseParams });
       }
     } else {
       // 解析に失敗した場合は保存せず、アップロード済みの画像も削除する
