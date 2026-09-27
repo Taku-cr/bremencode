@@ -638,6 +638,7 @@ function updateCashRow(type, i, field, val) {
   const list = type === "income" ? incomeItems : expenseItems;
   list[i][field] = val;
   if (type === "expense") updateExpenseTotal();
+  else                    updateCashBalance();
 }
 
 function updateExpenseTotal() {
@@ -651,7 +652,8 @@ function updateCashBalance() {
   const finalTotal      = Number(document.getElementById("f-final-total")?.value)      || 0;
   const cumulativeSales = Number(document.getElementById("f-cumulative-sales")?.value)  || 0;
   const expenseTotal    = Number(document.getElementById("f-expense-total")?.value)     || 0;
-  const balance         = finalTotal - (cumulativeSales + expenseTotal);
+  const incomeTotal     = incomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const balance         = finalTotal - cumulativeSales + incomeTotal - expenseTotal;
   const el              = document.getElementById("f-cash-balance");
   if (el) el.value = balance || "";
 }
@@ -659,7 +661,7 @@ function updateCashBalance() {
 function renderCash(type) {
   const list = type === "income" ? incomeItems : expenseItems;
   const el   = document.getElementById(`${type}-container`);
-  if (type === "expense") updateExpenseTotal();
+  if (type === "expense") updateExpenseTotal(); else updateCashBalance();
   const color = type === "income" ? "success" : "danger";
   el.innerHTML = list.map((row, i) => `
     <div class="row g-2 mb-2 align-items-center">
@@ -963,9 +965,10 @@ function setTxModalMode(mode) {
 function renderTxDetailView(tx) {
   const cat          = CATEGORIES[tx.category] || CATEGORIES.other;
   const expenseTotal = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const incomeTotal  = (tx.income   || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   // 合計(１)＝各種売上（明細の合計）－値引き
   const finalTotal   = itemsTotal(tx.items) - (tx.payment?.discount || 0);
-  const cashBalance  = finalTotal - ((tx.payment?.cumulativeSales || 0) + expenseTotal);
+  const cashBalance  = finalTotal - (tx.payment?.cumulativeSales || 0) + incomeTotal - expenseTotal;
   const body         = document.getElementById("modal-tx-body");
 
   body.innerHTML = `
@@ -1292,8 +1295,9 @@ function updateEditCashBalance() {
   const finalTotal      = Number(document.getElementById("edit-final-total")?.value)   || 0;
   const cumulativeSales = Number(document.getElementById("edit-cumsales")?.value)      || 0;
   const expenseTotal    = Number(document.getElementById("edit-expense-total")?.value) || 0;
+  const incomeTotal     = editIncomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const el = document.getElementById("edit-cash-balance");
-  if (el) el.value = finalTotal - (cumulativeSales + expenseTotal) || "";
+  if (el) el.value = finalTotal - cumulativeSales + incomeTotal - expenseTotal || "";
 }
 
 // ------------------------------------------------------------
@@ -1313,6 +1317,7 @@ function updateEditCashRow(type, i, field, val) {
   const list = type === "income" ? editIncomeItems : editExpenseItems;
   list[i][field] = val;
   if (type === "expense") updateEditExpenseTotal();
+  else                    updateEditCashBalance();
 }
 function updateEditExpenseTotal() {
   const total = editExpenseItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
@@ -1323,7 +1328,7 @@ function updateEditExpenseTotal() {
 function renderEditCash(type) {
   const list  = type === "income" ? editIncomeItems : editExpenseItems;
   const el    = document.getElementById(`edit-${type}-container`);
-  if (type === "expense") updateEditExpenseTotal();
+  if (type === "expense") updateEditExpenseTotal(); else updateEditCashBalance();
   const color = type === "income" ? "success" : "danger";
   el.innerHTML = list.map((row, i) => `
     <div class="row g-2 mb-2 align-items-center">
@@ -1602,9 +1607,10 @@ async function exportToCashExcel() {
       const finalTotal = itemsTotal(tx.items) - (tx.payment?.discount || 0);
       const cumSales   = tx.payment?.cumulativeSales || 0;
       const expTotal   = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const incTotal   = (tx.income   || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       // 京信への入金額はレシートに印字された「合計（３）理論在高」をそのまま使う
       // （他の数字からの逆算にすると必ず帳尻が合ってしまい、照合チェックとして機能しないため）
-      const cashBal = tx.payment?.cashBalance ?? (finalTotal - cumSales - expTotal);
+      const cashBal = tx.payment?.cashBalance ?? (finalTotal - cumSales + incTotal - expTotal);
       out.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
       out.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
       (tx.expenses || []).forEach(exp => {
