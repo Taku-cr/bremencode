@@ -72,6 +72,16 @@
     .tx-row:hover { background: #f5f5f5; cursor: pointer; }
     /* iOSでの表の横スクロールを滑らかにする（明細・出金内訳などが画面幅を超える場合に横スライドで見られるように） */
     .table-responsive { -webkit-overflow-scrolling: touch; }
+    /* 数値入力欄の上下スピナー（増減ボタン）を非表示にし、数字カウント式ではなく普通の入力欄に見せる */
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
     .badge-weather {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: .78rem; padding: 2px 8px; border-radius: 12px;
