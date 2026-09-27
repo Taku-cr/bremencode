@@ -769,9 +769,7 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
       income:   incomeItems.filter(r => r.name || r.amount),
       expenses: expenseItems.filter(r => r.name || r.amount),
       payment: {
-        method:            document.getElementById("f-method").value || null,
         subtotal:          Number(document.getElementById("f-subtotal").value)             || 0,
-        tax:               Number(document.getElementById("f-tax").value)                  || 0,
         total:             Number(document.getElementById("f-total").value)                || 0,
         discount:          Number(document.getElementById("f-discount").value)             || 0,
         totalQty:          Number(document.getElementById("f-total-qty").value)            || 0,
@@ -973,9 +971,7 @@ function renderTxDetailView(tx) {
           <tr><td class="text-muted">カテゴリ</td><td>
             <span class="badge-cat" style="background:${cat.color}22;color:${cat.color}">${cat.label}</span>
           </td></tr>
-          <tr><td class="text-muted">支払方法</td><td>${PAYMENT_LABELS[tx.payment?.method] || "--"}</td></tr>
           <tr><td class="text-muted">小計</td><td>${fmtCurrency(tx.payment?.subtotal || 0)}</td></tr>
-          <tr><td class="text-muted">消費税</td><td>${fmtCurrency(tx.payment?.tax || 0)}</td></tr>
           <tr><td class="fw-bold">合計</td><td class="fw-bold fs-5">${fmtCurrency(tx.payment?.total || 0)}</td></tr>
           <tr><td class="text-muted">値引き</td><td>${tx.payment?.discount ? `-${fmtCurrency(tx.payment.discount)}` : "--"}</td></tr>
           <tr><td class="fw-bold">値引き後合計</td><td class="fw-bold">${fmtCurrency(finalTotal)}</td></tr>
@@ -1080,22 +1076,6 @@ function renderTxEditForm(tx) {
         <div class="col-12">
           <label class="form-label small fw-bold">店舗名</label>
           <input type="text" class="form-control" id="edit-store" value="${esc(tx.store?.name || "")}" placeholder="例：セブンイレブン">
-        </div>
-        <div class="col-6">
-          <label class="form-label small fw-bold">支払方法</label>
-          <select class="form-select" id="edit-method">
-            <option value="">未設定</option>
-            ${Object.entries(PAYMENT_LABELS).map(([k, label]) =>
-              `<option value="${k}" ${p.method === k ? "selected" : ""}>${label}</option>`
-            ).join("")}
-          </select>
-        </div>
-        <div class="col-6">
-          <label class="form-label small fw-bold">消費税</label>
-          <div class="input-group">
-            <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-tax" min="0" placeholder="0" value="${p.tax || 0}">
-          </div>
         </div>
 
         <div class="col-12">
@@ -1394,9 +1374,7 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
     category: document.getElementById("edit-category").value,
     payment: {
       ...(activeTx.payment || {}),
-      method:            document.getElementById("edit-method").value || null,
       subtotal:          Number(document.getElementById("edit-subtotal").value)  || 0,
-      tax:               Number(document.getElementById("edit-tax").value)      || 0,
       total:             Number(document.getElementById("edit-total").value)     || 0,
       totalQty:          Number(document.getElementById("edit-total-qty").value) || 0,
       txCount:           val("edit-tx-count")        ?? 0,
