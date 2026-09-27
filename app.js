@@ -510,6 +510,7 @@ function applyAnalysisToForm(data) {
   if (data.payment?.discount) document.getElementById("f-discount").value = data.payment.discount;
   if (data.items?.length)    { receiptItems = data.items; renderItems(); }
   recalcTotals();
+  if (data.payment?.totalQty)           document.getElementById("f-total-qty").value           = data.payment.totalQty;
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
   if (data.payment?.customerUnitPrice) document.getElementById("f-customer-unit-price").value  = data.payment.customerUnitPrice;
   if (data.payment?.cumulativeSales)   document.getElementById("f-cumulative-sales").value      = data.payment.cumulativeSales;
@@ -601,15 +602,13 @@ function recalcTotals() {
     const rate = it.taxRate ?? 10;
     return s + Math.round(base * (1 + rate / 100));
   }, 0);
-  const totalQty   = receiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-  const txCount    = receiptItems.length;
   const discount   = Number(document.getElementById("f-discount")?.value) || 0;
   const finalTotal = Math.max(0, total - discount);
 
   document.getElementById("f-subtotal").value   = subtotal;
   document.getElementById("f-total").value       = total;
-  document.getElementById("f-total-qty").value   = totalQty;
-  document.getElementById("f-tx-count").value    = txCount;
+  // 総点数・取引数はレシート印字の実数値（総点数・組数）を使うべきで、明細の行数や数量合計とは
+  // 一致するとは限らないため、ここでは上書きしない（手入力 or Geminiの抽出値のまま）
   document.getElementById("f-final-total").value = finalTotal;
   updateCashBalance();
 }
@@ -1138,7 +1137,7 @@ function renderTxEditForm(tx) {
 
         <div class="col-3">
           <label class="form-label small fw-bold">総点数</label>
-          <input type="number" class="form-control bg-light" id="edit-total-qty" min="0" placeholder="0" readonly>
+          <input type="number" class="form-control" id="edit-total-qty" min="0" placeholder="0" value="${p.totalQty ?? ""}">
         </div>
         <div class="col-3">
           <label class="form-label small fw-bold">取引数</label>
@@ -1286,9 +1285,8 @@ function renderEditItems() {
 }
 function recalcEditItemTotals() {
   const subtotal = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
-  const totalQty = editReceiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-  const elS = document.getElementById("edit-subtotal");   if (elS) elS.value = subtotal;
-  const elQ = document.getElementById("edit-total-qty");  if (elQ) elQ.value = totalQty;
+  const elS = document.getElementById("edit-subtotal"); if (elS) elS.value = subtotal;
+  // 総点数はレシート印字の実数値（総点数）を使うべきで、明細の数量合計とは限らないため上書きしない
   recalcEditFinalTotal();
 }
 
