@@ -1012,28 +1012,34 @@ function renderTxDetailView(tx) {
             <img src="${tx.receipt.imageUrl}" class="img-fluid rounded mb-3" style="max-height:200px;" alt="">`}` : ""}
         ${tx.items?.length ? `
           <h6 class="text-muted small fw-bold text-uppercase">明細</h6>
+          <div class="table-responsive">
           <table class="table table-sm">
             <thead><tr><th>品名</th><th>数量</th><th class="text-end">小計</th></tr></thead>
             <tbody>${tx.items.map(i =>
               `<tr><td>${esc(i.name)}</td><td>${i.quantity}</td><td class="text-end">${fmtCurrency(i.subtotal || i.unitPrice)}</td></tr>`
             ).join("")}</tbody>
-          </table>` : ""}
+          </table>
+          </div>` : ""}
         ${tx.expenses?.length ? `
           <h6 class="text-muted small fw-bold text-uppercase">出金内訳</h6>
+          <div class="table-responsive">
           <table class="table table-sm">
             <thead><tr><th>項目</th><th class="text-end">金額</th></tr></thead>
             <tbody>${tx.expenses.map(e =>
               `<tr><td>${esc(e.name || "出金")}</td><td class="text-end text-danger">-${fmtCurrency(e.amount)}</td></tr>`
             ).join("")}</tbody>
-          </table>` : ""}
+          </table>
+          </div>` : ""}
         ${tx.income?.length ? `
           <h6 class="text-muted small fw-bold text-uppercase">入金内訳</h6>
+          <div class="table-responsive">
           <table class="table table-sm">
             <thead><tr><th>項目</th><th class="text-end">金額</th></tr></thead>
             <tbody>${tx.income.map(i =>
               `<tr><td>${esc(i.name || "入金")}</td><td class="text-end text-success">${fmtCurrency(i.amount)}</td></tr>`
             ).join("")}</tbody>
-          </table>` : ""}
+          </table>
+          </div>` : ""}
       </div>
     </div>`;
 }

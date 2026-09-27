@@ -70,6 +70,8 @@
     .upload-slot img { max-height: 120px; object-fit: contain; }
     /* Table */
     .tx-row:hover { background: #f5f5f5; cursor: pointer; }
+    /* iOSでの表の横スクロールを滑らかにする（明細・出金内訳などが画面幅を超える場合に横スライドで見られるように） */
+    .table-responsive { -webkit-overflow-scrolling: touch; }
     .badge-weather {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: .78rem; padding: 2px 8px; border-radius: 12px;
@@ -726,7 +728,7 @@
 
 <!-- Transaction Detail Modal -->
 <div class="modal fade" id="modal-tx" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title fw-bold">取引詳細</h5>
