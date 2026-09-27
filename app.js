@@ -516,7 +516,6 @@ function applyAnalysisToForm(data) {
   if (data.category)         document.getElementById("f-category").value = data.category;
   if (data.payment?.discount) document.getElementById("f-discount").value = data.payment.discount;
   if (data.items?.length)    { receiptItems = data.items; renderItems(); }
-  recalcTotals();
   if (data.payment?.totalQty)           document.getElementById("f-total-qty").value           = data.payment.totalQty;
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
   if (data.payment?.customerUnitPrice) document.getElementById("f-customer-unit-price").value  = data.payment.customerUnitPrice;
@@ -527,6 +526,10 @@ function applyAnalysisToForm(data) {
 
   if (data.payment?.cashIn)  { incomeItems.push({ name: "入金", amount: data.payment.cashIn }); renderCash("income"); }
   if (data.payment?.cashOut) { expenseItems.push({ name: "出金", amount: data.payment.cashOut }); renderCash("expense"); }
+
+  // 信計売上・入金・出金をすべてフォームに反映した後にまとめて再計算する
+  // （先に計算すると、まだ0のままの信計売上などを使って現金残高が誤って計算されてしまうため）
+  recalcTotals();
 }
 
 // ============================================================
