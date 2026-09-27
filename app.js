@@ -529,6 +529,8 @@ document.getElementById("btn-add-item").addEventListener("click", () => {
   renderItems();
 });
 
+// スマートフォンでも横スクロール（table-responsive）で全列を見られるよう、
+// グリッドではなく<tr>で組み立てる（items-containerはHTML側で<tbody>になっている）
 function renderItems() {
   const el = document.getElementById("items-container");
   if (!receiptItems.length) { el.innerHTML = ""; return; }
@@ -537,42 +539,42 @@ function renderItems() {
     const rate        = item.taxRate ?? 10;
     const taxIncluded = Math.round(subtotal * (1 + rate / 100));
     return `
-    <div class="row g-2 mb-2 align-items-center">
-      <div class="col-3">
+    <tr>
+      <td>
         <input type="text" class="form-control form-control-sm" placeholder="品名"
           value="${esc(item.name)}" oninput="updateItem(${i},'name',this.value)">
-      </div>
-      <div class="col-2">
+      </td>
+      <td>
         <input type="number" class="form-control form-control-sm" placeholder="数量" min="1"
           value="${item.quantity}" oninput="updateItem(${i},'quantity',+this.value)">
-      </div>
-      <div class="col-2">
+      </td>
+      <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
           <input type="number" class="form-control" placeholder="小計" min="0"
             value="${subtotal}" oninput="updateItem(${i},'subtotal',+this.value)">
         </div>
-      </div>
-      <div class="col-2">
+      </td>
+      <td>
         <select class="form-select form-select-sm" onchange="updateItem(${i},'taxRate',+this.value)">
           <option value="10" ${rate === 10 ? 'selected' : ''}>10%</option>
           <option value="8"  ${rate === 8  ? 'selected' : ''}>8%</option>
           <option value="0"  ${rate === 0  ? 'selected' : ''}>非課税</option>
         </select>
-      </div>
-      <div class="col-2">
+      </td>
+      <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
           <input type="number" class="form-control bg-light" placeholder="税込" min="0" readonly
             id="item-tax-${i}" value="${taxIncluded}">
         </div>
-      </div>
-      <div class="col-1 text-end">
+      </td>
+      <td class="text-end">
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(${i})">
           <i class="fa-solid fa-xmark"></i>
         </button>
-      </div>
-    </div>
+      </td>
+    </tr>
   `;}).join("");
 }
 
@@ -768,8 +770,9 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
       income:   incomeItems.filter(r => r.name || r.amount),
       expenses: expenseItems.filter(r => r.name || r.amount),
       payment: {
+        method:            document.getElementById("f-method").value || null,
         subtotal:          Number(document.getElementById("f-subtotal").value)             || 0,
-        tax:               Math.round((Number(document.getElementById("f-subtotal").value) || 0) * 0.1),
+        tax:               Number(document.getElementById("f-tax").value)                  || 0,
         total:             Number(document.getElementById("f-total").value)                || 0,
         discount:          Number(document.getElementById("f-discount").value)             || 0,
         totalQty:          Number(document.getElementById("f-total-qty").value)            || 0,
@@ -1103,7 +1106,19 @@ function renderTxEditForm(tx) {
               <i class="fa-solid fa-plus me-1"></i>追加
             </button>
           </div>
-          <div id="edit-items-container"></div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th style="min-width:110px">品名</th>
+                  <th style="min-width:70px">数量</th>
+                  <th style="min-width:110px">小計</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="edit-items-container"></tbody>
+            </table>
+          </div>
         </div>
 
         <div class="col-6">
@@ -1239,32 +1254,34 @@ function updateEditItem(i, field, val) {
   editReceiptItems[i][field] = val;
   recalcEditItemTotals();
 }
+// スマートフォンでも横スクロール（table-responsive）で全列を見られるよう、
+// グリッドではなく<tr>で組み立てる（edit-items-containerはHTML側で<tbody>になっている）
 function renderEditItems() {
   const el = document.getElementById("edit-items-container");
   el.innerHTML = editReceiptItems.map((item, i) => `
-    <div class="row g-2 mb-2 align-items-center">
-      <div class="col-5">
+    <tr>
+      <td>
         <input type="text" class="form-control form-control-sm" placeholder="品名"
           value="${esc(item.name)}" oninput="updateEditItem(${i},'name',this.value)">
-      </div>
-      <div class="col-3">
+      </td>
+      <td>
         <input type="number" class="form-control form-control-sm" placeholder="数量" min="0"
           value="${item.quantity ?? ""}" oninput="updateEditItem(${i},'quantity',+this.value)">
-      </div>
-      <div class="col-3">
+      </td>
+      <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
           <input type="number" class="form-control" placeholder="小計" min="0"
             value="${item.subtotal ?? item.unitPrice ?? ""}" oninput="updateEditItem(${i},'subtotal',+this.value)">
         </div>
-      </div>
-      <div class="col-1 text-end">
+      </td>
+      <td class="text-end">
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEditItem(${i})">
           <i class="fa-solid fa-xmark"></i>
         </button>
-      </div>
-    </div>
-  `).join("") || `<div class="text-muted small">なし</div>`;
+      </td>
+    </tr>
+  `).join("") || `<tr><td colspan="4" class="text-muted small">なし</td></tr>`;
   recalcEditItemTotals();
 }
 function recalcEditItemTotals() {
