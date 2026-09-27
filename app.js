@@ -980,6 +980,9 @@ function renderTxDetailView(tx) {
           <tr><td class="text-muted">客数</td><td>${tx.payment?.txCount ?? "--"} 件</td></tr>
           <tr><td class="text-muted">客単価</td><td>${tx.payment?.customerUnitPrice != null ? fmtCurrency(tx.payment.customerUnitPrice) : "--"}</td></tr>
           <tr><td class="text-muted">信計売上</td><td>${tx.payment?.cumulativeSales != null ? fmtCurrency(tx.payment.cumulativeSales) : "--"}</td></tr>
+          <tr><td class="text-muted">現金売上</td><td>${tx.payment?.cashSales != null ? fmtCurrency(tx.payment.cashSales) : "--"}</td></tr>
+          <tr><td class="text-muted">合計（２）</td><td>${tx.payment?.total2 != null ? fmtCurrency(tx.payment.total2) : "--"}</td></tr>
+          <tr><td class="text-muted">合計（３）理論在高</td><td>${tx.payment?.cashBalance != null ? fmtCurrency(tx.payment.cashBalance) : "--"}</td></tr>
           <tr><td class="text-muted text-danger">出金合計</td><td class="text-danger">${expenseTotal ? `-${fmtCurrency(expenseTotal)}` : "--"}</td></tr>
           <tr><td class="fw-bold text-primary">現金残高</td><td class="fw-bold text-primary">${fmtCurrency(cashBalance)}</td></tr>
         </table>
@@ -1075,6 +1078,22 @@ function renderTxEditForm(tx) {
         <div class="col-12">
           <label class="form-label small fw-bold">店舗名</label>
           <input type="text" class="form-control" id="edit-store" value="${esc(tx.store?.name || "")}" placeholder="例：セブンイレブン">
+        </div>
+        <div class="col-6">
+          <label class="form-label small fw-bold">支払方法</label>
+          <select class="form-select" id="edit-method">
+            <option value="">未設定</option>
+            ${Object.entries(PAYMENT_LABELS).map(([k, label]) =>
+              `<option value="${k}" ${p.method === k ? "selected" : ""}>${label}</option>`
+            ).join("")}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label small fw-bold">消費税</label>
+          <div class="input-group">
+            <span class="input-group-text">¥</span>
+            <input type="number" class="form-control" id="edit-tax" min="0" placeholder="0" value="${p.tax || 0}">
+          </div>
         </div>
 
         <div class="col-12">
@@ -1360,7 +1379,9 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
     category: document.getElementById("edit-category").value,
     payment: {
       ...(activeTx.payment || {}),
+      method:            document.getElementById("edit-method").value || null,
       subtotal:          Number(document.getElementById("edit-subtotal").value)  || 0,
+      tax:               Number(document.getElementById("edit-tax").value)      || 0,
       total:             Number(document.getElementById("edit-total").value)     || 0,
       totalQty:          Number(document.getElementById("edit-total-qty").value) || 0,
       txCount:           val("edit-tx-count")        ?? 0,
