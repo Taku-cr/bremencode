@@ -86,10 +86,15 @@ Bremen
     "cashOutCount": 出金の件数（数値。「出金 N件」のN。出金が無ければ0）,
     "cashBalance": 合計（３）（理論在高）の金額（数値またはnull）
   },
-  "category": "food/drink/household/clothing/electronics/health/transport/entertainment/education/other のいずれか（部門構成から最も近いもの）",
   "ocrRawText": "レシートに書かれているテキスト全文",
   "confidence": 0から1の解析信頼度（数値）
 }`;
+
+// カテゴリ＝店舗（Bremen / cote a cote）。Geminiに推測させず、店名の読み取り結果から
+// 機械的に判定する（レシートの店名欄がそのまま2店舗のどちらかを表しているため）。
+function categoryFromStoreName(name) {
+  return /cote/i.test(name || "") ? "cote_a_cote" : "bremen";
+}
 
 async function fetchImagePart(url) {
   const res      = await axios.get(url, { responseType: "arraybuffer" });
@@ -112,10 +117,11 @@ async function runReceiptAnalysis(imageParts) {
   if (!jsonMatch) throw new Error("Gemini の応答から JSON を取得できませんでした");
 
   const parsed = JSON.parse(jsonMatch[0]);
+  const store  = parsed.store || { name: "", address: null, phone: null };
 
   return {
     receiptDate: parsed.receiptDate  || todayStr(),
-    store:       parsed.store        || { name: "", address: null, phone: null },
+    store,
     items:       parsed.items        || [],
     payment: {
       totalQty: 0, txCount: 0, discount: 0, total: 0,
@@ -123,7 +129,7 @@ async function runReceiptAnalysis(imageParts) {
       cashSales: null, total2: null, cashIn: 0, cashOut: 0, cashOutCount: 0, cashBalance: null,
       ...(parsed.payment || {})
     },
-    category:    parsed.category     || "other",
+    category:    categoryFromStoreName(store.name),
     ocrRawText:  parsed.ocrRawText   || "",
     confidence:  parsed.confidence   ?? 0.9,
   };
@@ -203,4 +209,4 @@ async function analyzeInvoiceImage(imageUrls) {
   };
 }
 
-module.exports = { analyzeReceiptImage, analyzeReceiptImageBuffer, analyzeInvoiceImage };
+module.exports = { analyzeReceiptImage, analyzeReceiptImageBuffer, analyzeInvoiceImage, categoryFromStoreName };

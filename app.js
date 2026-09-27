@@ -32,16 +32,23 @@ if (IS_LOCAL) {
 // ============================================================
 // 定数
 // ============================================================
+// カテゴリ＝店舗（この事業が運営する2店舗のどちらか）
 const CATEGORIES = {
-  food:          { label: "食費",       color: "#ef5350", icon: "fa-utensils" },
-  transport:     { label: "交通費",     color: "#42a5f5", icon: "fa-train" },
-  entertainment: { label: "娯楽",       color: "#ab47bc", icon: "fa-gamepad" },
-  health:        { label: "医療・健康", color: "#26a69a", icon: "fa-heart-pulse" },
-  clothing:      { label: "衣類",       color: "#ff7043", icon: "fa-shirt" },
-  household:     { label: "日用品",     color: "#8d6e63", icon: "fa-house" },
-  education:     { label: "教育",       color: "#5c6bc0", icon: "fa-book" },
-  other:         { label: "その他",     color: "#78909c", icon: "fa-ellipsis" }
+  bremen:      { label: "Bremen",      color: "#8d6e63", icon: "fa-bread-slice" },
+  cote_a_cote: { label: "cote a cote", color: "#5c6bc0", icon: "fa-mug-saucer" }
 };
+
+// CATEGORIESを唯一の情報源として<select>の選択肢を作る（複数箇所への手書きコピーによる
+// 表記ズレを防ぐ）。f-category, filter-categoryはindex.html側は空のまま、ここで埋める。
+function populateCategorySelect(id, includeAllOption) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML =
+    (includeAllOption ? '<option value="">すべて</option>' : "") +
+    Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.label}</option>`).join("");
+}
+populateCategorySelect("f-category", false);
+populateCategorySelect("filter-category", true);
 
 const PAYMENT_LABELS = {
   cash: "現金", credit: "クレジット", debit: "デビット",
@@ -1115,22 +1122,22 @@ function renderTxEditForm(tx) {
           </div>
         </div>
 
-        <div class="col-3">
+        <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">総点数</label>
           <input type="number" class="form-control" id="edit-total-qty" min="0" placeholder="0" value="${p.totalQty ?? ""}">
         </div>
-        <div class="col-3">
+        <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">取引数</label>
           <input type="number" class="form-control" id="edit-tx-count" min="0" placeholder="0" value="${p.txCount ?? ""}">
         </div>
-        <div class="col-3">
+        <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">値引き</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
             <input type="number" class="form-control" id="edit-discount" min="0" placeholder="0" value="${p.discount || 0}" oninput="recalcEditFinalTotal()">
           </div>
         </div>
-        <div class="col-3">
+        <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">値引き後の合計</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
@@ -1152,21 +1159,21 @@ function renderTxEditForm(tx) {
             <input type="number" class="form-control" id="edit-cumsales" min="0" placeholder="0" value="${p.cumulativeSales ?? ""}" oninput="updateEditCashBalance()">
           </div>
         </div>
-        <div class="col-4">
+        <div class="col-6 col-md-4">
           <label class="form-label small fw-bold">現金売上</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
             <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}">
           </div>
         </div>
-        <div class="col-4">
+        <div class="col-6 col-md-4">
           <label class="form-label small fw-bold">合計（２）</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
             <input type="number" class="form-control" id="edit-total2" min="0" placeholder="0" value="${p.total2 ?? ""}">
           </div>
         </div>
-        <div class="col-4">
+        <div class="col-12 col-md-4">
           <label class="form-label small fw-bold">合計（３）理論在高</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
