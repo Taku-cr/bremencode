@@ -544,7 +544,7 @@ function renderItems() {
   if (!receiptItems.length) { el.innerHTML = ""; return; }
   el.innerHTML = receiptItems.map((item, i) => {
     const subtotal    = Math.round(item.subtotal || item.unitPrice || 0);
-    const rate        = item.taxRate ?? 10;
+    const rate        = item.taxRate ?? 0;
     const taxIncluded = Math.round(subtotal * (1 + rate / 100));
     return `
     <tr>
@@ -565,9 +565,9 @@ function renderItems() {
       </td>
       <td>
         <select class="form-select form-select-sm" onchange="updateItem(${i},'taxRate',+this.value)">
-          <option value="10" ${rate === 10 ? 'selected' : ''}>10%</option>
-          <option value="8"  ${rate === 8  ? 'selected' : ''}>8%</option>
           <option value="0"  ${rate === 0  ? 'selected' : ''}>非課税</option>
+          <option value="8"  ${rate === 8  ? 'selected' : ''}>8%</option>
+          <option value="10" ${rate === 10 ? 'selected' : ''}>10%</option>
         </select>
       </td>
       <td>
@@ -595,7 +595,7 @@ function updateItem(i, field, val) {
     renderItems();
   } else if (field === "subtotal" || field === "quantity" || field === "unitPrice") {
     const base = Math.round(receiptItems[i].subtotal || receiptItems[i].unitPrice || 0);
-    const rate = receiptItems[i].taxRate ?? 10;
+    const rate = receiptItems[i].taxRate ?? 0;
     const el = document.getElementById(`item-tax-${i}`);
     if (el) el.value = Math.round(base * (1 + rate / 100));
   }
@@ -606,7 +606,7 @@ function recalcTotals() {
   const subtotal   = receiptItems.reduce((s, it) => s + Math.round(it.subtotal || it.unitPrice || 0), 0);
   const total      = receiptItems.reduce((s, it) => {
     const base = Math.round(it.subtotal || it.unitPrice || 0);
-    const rate = it.taxRate ?? 10;
+    const rate = it.taxRate ?? 0;
     return s + Math.round(base * (1 + rate / 100));
   }, 0);
   const discount   = Number(document.getElementById("f-discount")?.value) || 0;
