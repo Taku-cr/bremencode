@@ -37,6 +37,9 @@ const CATEGORIES = {
   bremen:      { label: "Bremen",      color: "#8d6e63", icon: "fa-bread-slice" },
   cote_a_cote: { label: "cote a cote", color: "#5c6bc0", icon: "fa-mug-saucer" }
 };
+// 旧分類（8カテゴリ時代）の取引など、CATEGORIESに無い値が入っていた場合のフォールバック。
+// これが無いと一覧の描画中に例外が発生し、取引一覧がまるごと表示されなくなる。
+const UNKNOWN_CATEGORY = { label: "不明", color: "#9e9e9e", icon: "fa-question" };
 
 // CATEGORIESを唯一の情報源として<select>の選択肢を作る（複数箇所への手書きコピーによる
 // 表記ズレを防ぐ）。f-category, filter-categoryはindex.html側は空のまま、ここで埋める。
@@ -266,7 +269,7 @@ function renderRecentTx(txs) {
     return;
   }
   el.innerHTML = txs.map(tx => {
-    const cat = CATEGORIES[tx.category] || CATEGORIES.other;
+    const cat = CATEGORIES[tx.category] || UNKNOWN_CATEGORY;
     return `
       <div class="d-flex align-items-center py-2 border-bottom tx-row" onclick="showTxDetail('${tx.id}')">
         <span class="badge-cat me-3" style="background:${cat.color}22;color:${cat.color}">
@@ -909,7 +912,7 @@ function renderTxTable() {
   const page  = allTxs.slice(start, start + PAGE_SIZE);
 
   tbody.innerHTML = page.map(tx => {
-    const cat = CATEGORIES[tx.category] || CATEGORIES.other;
+    const cat = CATEGORIES[tx.category] || UNKNOWN_CATEGORY;
     return `
       <tr class="tx-row" onclick="showTxDetail('${tx.id}')">
         <td>${tx.receiptDate || "--"}</td>
@@ -966,7 +969,7 @@ function setTxModalMode(mode) {
 }
 
 function renderTxDetailView(tx) {
-  const cat          = CATEGORIES[tx.category] || CATEGORIES.other;
+  const cat          = CATEGORIES[tx.category] || UNKNOWN_CATEGORY;
   const expenseTotal = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const incomeTotal  = (tx.income   || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   // 合計(１)＝各種売上（明細の合計）－値引き
