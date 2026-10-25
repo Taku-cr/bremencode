@@ -220,7 +220,7 @@ async function handleExpenseDialogReply(lineUserId, text, replyToken) {
 const CORRECTION_FIELD_ALIASES = {
   "値引き": "discount",
   "売上高": "total", "売上高(税込)": "total", "売上高（税込）": "total", "売上高税込": "total",
-  "信計売上": "cumulativeSales",
+  "信計売上": "cumulativeSales", "信計": "cumulativeSales",
   "現金売上": "cashSales",
   "合計2": "total2", "合計２": "total2", "合計(2)": "total2", "合計(２)": "total2",
   "理論在高": "cashBalance", "合計3": "cashBalance", "合計３": "cashBalance",
