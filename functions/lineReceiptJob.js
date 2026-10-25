@@ -8,6 +8,11 @@ function yen(n) {
   return `¥${Number(n || 0).toLocaleString()}`;
 }
 
+// 品目名の表記ゆれ（空白の有無・全角半角など）を吸収して比較するための正規化
+function normalizeItemName(s) {
+  return String(s || "").replace(/[\s　]+/g, "");
+}
+
 // 合計(１)＝各種売上（調理パン・焼きこみ・菓子パン・デニッシュ・フランスパン・ブレッド・
 // 焼き菓子・ジュース・コーヒー・その他・未登録商品）を合わせた金額－値引き、として算出する。
 // 部門ごとの仕分けは表示上のことで、明細（items）を単純合計すれば同じ値になる。
@@ -289,10 +294,16 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
       applied.push(`${name} → ${yen(amount)}`);
       return;
     }
-    const item = items.find(it => it.name === name);
+    // 完全一致がなければ、空白の有無などの表記ゆれを無視した一致・部分一致も試す
+    // （OCRが読み取った品目名とLINEで打った名前が微妙に違うだけで新規明細が
+    // 量産されてしまい、本来直したかった金額がいつまでも直らない不具合があったため）
+    const target = normalizeItemName(name);
+    const item = items.find(it => it.name === name)
+      || items.find(it => normalizeItemName(it.name) === target)
+      || items.find(it => target && normalizeItemName(it.name).includes(target));
     if (item) {
       item.subtotal = amount;
-      applied.push(`${name}（明細） → ${yen(amount)}`);
+      applied.push(`${item.name}（明細） → ${yen(amount)}`);
     } else {
       items.push({ name, quantity: 1, unitPrice: amount, subtotal: amount, category: "other" });
       applied.push(`${name}（新規の明細として追加） → ${yen(amount)}`);
