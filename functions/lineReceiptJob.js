@@ -34,7 +34,11 @@ function checkConsistency(analysis) {
   }
 
   if (p.cashBalance != null && p.cashSales != null) {
-    const expectedBalance = (Number(p.cashSales) || 0) + (Number(p.cashIn) || 0) - (Number(p.cashOut) || 0);
+    // 保存済みの取引ではcashIn/cashOutはincome/expenses配列に変換されてpaymentから消えているため、
+    // 配列があればそちらを優先し、無ければ（解析直後のGemini生データ用）payment.cashIn/cashOutを使う
+    const cashIn  = analysis.income   ? analysis.income.reduce((s, r) => s + (Number(r.amount) || 0), 0)   : (Number(p.cashIn)  || 0);
+    const cashOut = analysis.expenses ? analysis.expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0) : (Number(p.cashOut) || 0);
+    const expectedBalance = (Number(p.cashSales) || 0) + cashIn - cashOut;
     if (Math.abs(expectedBalance - Number(p.cashBalance)) > 1) {
       issues.push(`合計(３)理論在高 ${yen(p.cashBalance)} が、現金売上+入金-出金の計算値 ${yen(expectedBalance)} と一致しません`);
     }
@@ -282,10 +286,12 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
     return true;
   }
 
-  const tx      = txSnap.data();
-  const items   = (tx.items || []).map(it => ({ ...it }));
-  const payment = { ...(tx.payment || {}) };
-  const applied = [];
+  const tx       = txSnap.data();
+  const items    = (tx.items    || []).map(it => ({ ...it }));
+  const income   = (tx.income   || []).map(it => ({ ...it }));
+  const expenses = (tx.expenses || []).map(it => ({ ...it }));
+  const payment  = { ...(tx.payment || {}) };
+  const applied  = [];
 
   corrections.forEach(({ name, amount }) => {
     const field = CORRECTION_FIELD_ALIASES[name];
@@ -310,7 +316,7 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
     }
   });
 
-  const issues = checkConsistency({ items, payment });
+  const issues = checkConsistency({ items, payment, income, expenses });
   await txRef.update({
     items, payment,
     consistencyIssues: issues,
