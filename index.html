@@ -361,7 +361,7 @@
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label small fw-bold">取引数</label>
-                  <input type="number" class="form-control" id="f-tx-count" min="0" placeholder="0">
+                  <input type="number" class="form-control" id="f-tx-count" min="0" placeholder="0" oninput="recalcTotals()">
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label small fw-bold">値引き</label>
@@ -381,7 +381,7 @@
                   <label class="form-label small fw-bold">客単価</label>
                   <div class="input-group">
                     <span class="input-group-text">¥</span>
-                    <input type="number" class="form-control" id="f-customer-unit-price" min="0" placeholder="0">
+                    <input type="number" class="form-control bg-light" id="f-customer-unit-price" min="0" placeholder="0" readonly>
                   </div>
                 </div>
                 <div class="col-6">

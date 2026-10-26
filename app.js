@@ -535,7 +535,6 @@ function applyAnalysisToForm(data) {
   if (data.items?.length)    { receiptItems = data.items; renderItems(); }
   if (data.payment?.totalQty)           document.getElementById("f-total-qty").value           = data.payment.totalQty;
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
-  if (data.payment?.customerUnitPrice) document.getElementById("f-customer-unit-price").value  = data.payment.customerUnitPrice;
   if (data.payment?.cumulativeSales)   document.getElementById("f-cumulative-sales").value      = data.payment.cumulativeSales;
   if (data.payment?.cashSales != null)    document.getElementById("f-cash-sales").value        = data.payment.cashSales;
   if (data.payment?.total2 != null)       document.getElementById("f-total2").value            = data.payment.total2;
@@ -605,9 +604,14 @@ function recalcTotals() {
   const finalTotal = Math.max(0, total - discount);
 
   document.getElementById("f-total").value       = total;
-  // 総点数・取引数はレシート印字の実数値（総点数・組数）を使うべきで、明細の行数や数量合計とは
+  // 総点数・取引数はレシート印字の実数値（総点数・組数）を使うべきで、明細の行数や数量とは
   // 一致するとは限らないため、ここでは上書きしない（手入力 or Geminiの抽出値のまま）
   document.getElementById("f-final-total").value = finalTotal;
+
+  // 客単価＝値引き後の合計／取引数
+  const txCount = Number(document.getElementById("f-tx-count")?.value) || 0;
+  document.getElementById("f-customer-unit-price").value = txCount > 0 ? Math.round(finalTotal / txCount) : "";
+
   updateCashBalance();
 }
 function removeItem(i) { receiptItems.splice(i, 1); renderItems(); }
@@ -959,6 +963,9 @@ function renderTxDetailView(tx) {
   // 合計(１)＝各種売上（明細の合計）－値引き
   const finalTotal   = itemsTotal(tx.items) - (tx.payment?.discount || 0);
   const cashBalance  = finalTotal - (tx.payment?.cumulativeSales || 0) + incomeTotal - expenseTotal;
+  // 客単価＝値引き後の合計／取引数
+  const txCount      = tx.payment?.txCount || 0;
+  const cup          = txCount > 0 ? Math.round(finalTotal / txCount) : null;
   const body         = document.getElementById("modal-tx-body");
 
   body.innerHTML = `
@@ -975,7 +982,7 @@ function renderTxDetailView(tx) {
           <tr><td class="text-muted">値引き</td><td>${tx.payment?.discount ? `-${fmtCurrency(tx.payment.discount)}` : "--"}</td></tr>
           <tr><td class="fw-bold">値引き後合計</td><td class="fw-bold">${fmtCurrency(finalTotal)}</td></tr>
           <tr><td class="text-muted">客数</td><td>${tx.payment?.txCount ?? "--"} 件</td></tr>
-          <tr><td class="text-muted">客単価</td><td>${tx.payment?.customerUnitPrice != null ? fmtCurrency(tx.payment.customerUnitPrice) : "--"}</td></tr>
+          <tr><td class="text-muted">客単価</td><td>${cup != null ? fmtCurrency(cup) : "--"}</td></tr>
           <tr><td class="text-muted">信計売上</td><td>${tx.payment?.cumulativeSales != null ? fmtCurrency(tx.payment.cumulativeSales) : "--"}</td></tr>
           <tr><td class="text-muted">現金売上</td><td>${tx.payment?.cashSales != null ? fmtCurrency(tx.payment.cashSales) : "--"}</td></tr>
           <tr><td class="text-muted">合計（２）</td><td>${tx.payment?.total2 != null ? fmtCurrency(tx.payment.total2) : "--"}</td></tr>
@@ -1113,7 +1120,7 @@ function renderTxEditForm(tx) {
         </div>
         <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">取引数</label>
-          <input type="number" class="form-control" id="edit-tx-count" min="0" placeholder="0" value="${p.txCount ?? ""}">
+          <input type="number" class="form-control" id="edit-tx-count" min="0" placeholder="0" value="${p.txCount ?? ""}" oninput="recalcEditFinalTotal()">
         </div>
         <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">値引き</label>
@@ -1134,7 +1141,7 @@ function renderTxEditForm(tx) {
           <label class="form-label small fw-bold">客単価</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-cup" min="0" placeholder="0" value="${p.customerUnitPrice ?? ""}">
+            <input type="number" class="form-control bg-light" id="edit-cup" min="0" placeholder="0" readonly>
           </div>
         </div>
         <div class="col-6">
@@ -1265,10 +1272,17 @@ function recalcEditItemTotals() {
 // 合計(１)＝各種売上（明細の合計、税込み）－値引き、として算出する
 // ------------------------------------------------------------
 function recalcEditFinalTotal() {
-  const subtotal = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
-  const discount  = Number(document.getElementById("edit-discount")?.value) || 0;
+  const subtotal   = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
+  const discount   = Number(document.getElementById("edit-discount")?.value) || 0;
+  const finalTotal = Math.max(0, subtotal - discount);
   const el = document.getElementById("edit-final-total");
-  if (el) el.value = Math.max(0, subtotal - discount);
+  if (el) el.value = finalTotal;
+
+  // 客単価＝値引き後の合計／取引数
+  const txCount = Number(document.getElementById("edit-tx-count")?.value) || 0;
+  const elCup = document.getElementById("edit-cup");
+  if (elCup) elCup.value = txCount > 0 ? Math.round(finalTotal / txCount) : "";
+
   updateEditCashBalance();
 }
 function updateEditCashBalance() {
@@ -1499,7 +1513,8 @@ async function exportToExcel() {
         const txCount    = txs.reduce((s, t) => s + (t.payment?.txCount  || 0), 0);
         const totalQty   = txs.reduce((s, t) =>
           s + (t.payment?.totalQty || (t.items || []).reduce((is, item) => is + (Number(item.quantity) || 0), 0)), 0);
-        const cup        = txs.find(t => t.payment?.customerUnitPrice)?.payment.customerUnitPrice ?? null;
+        // 客単価＝値引き後の合計／取引数
+        const cup        = txCount > 0 ? Math.round(totalSales / txCount) : null;
         const cumSales   = txs.reduce((s, t) => s + (t.payment?.cumulativeSales || 0), 0);
 
         const allInc         = txs.flatMap(t => t.income || []);
