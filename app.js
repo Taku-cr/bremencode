@@ -570,14 +570,14 @@ function renderItems() {
           value="${esc(item.name)}" oninput="updateItem(${i},'name',this.value)">
       </td>
       <td>
-        <input type="number" class="form-control form-control-sm" placeholder="数量" min="1"
-          value="${item.quantity}" oninput="updateItem(${i},'quantity',+this.value)">
+        <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="1"
+          value="${item.quantity}" oninput="updateItem(${i},'quantity',+this.value)" onchange="updateItem(${i},'quantity',+this.value)">
       </td>
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
-          <input type="number" class="form-control" placeholder="金額" min="0"
-            value="${amount}" oninput="updateItem(${i},'subtotal',+this.value)">
+          <input type="number" class="form-control item-amount-input" placeholder="金額" min="0"
+            value="${amount}" oninput="updateItem(${i},'subtotal',+this.value)" onchange="updateItem(${i},'subtotal',+this.value)">
         </div>
       </td>
       <td class="text-end">
@@ -598,13 +598,17 @@ function updateItem(i, field, val) {
 }
 
 function recalcTotals() {
-  const total      = receiptItems.reduce((s, it) => s + Math.round(it.subtotal || it.unitPrice || 0), 0);
-  const discount   = Number(document.getElementById("f-discount")?.value) || 0;
-  const finalTotal = Math.max(0, total - discount);
+  // 画面に表示されている金額欄の値を直接合計する（receiptItems側の値と表示がずれていても、
+  // 目に見えている数字どおりに合計されるようにするため）
+  const amountInputs = document.querySelectorAll("#items-container .item-amount-input");
+  const qtyInputs    = document.querySelectorAll("#items-container .item-qty-input");
+  const total        = Array.from(amountInputs).reduce((s, el) => s + (Math.round(Number(el.value)) || 0), 0);
+  const discount      = Number(document.getElementById("f-discount")?.value) || 0;
+  const finalTotal    = Math.max(0, total - discount);
 
   document.getElementById("f-total").value       = total;
   // 総点数＝明細の数量の合計
-  document.getElementById("f-total-qty").value   = receiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  document.getElementById("f-total-qty").value   = Array.from(qtyInputs).reduce((s, el) => s + (Number(el.value) || 0), 0);
   // 取引数はレシート印字の実数値（組数）を使うべきで、明細の行数とは一致するとは限らないため
   // ここでは上書きしない（手入力 or Geminiの抽出値のまま）
   document.getElementById("f-final-total").value = finalTotal;
@@ -1244,14 +1248,14 @@ function renderEditItems() {
           value="${esc(item.name)}" oninput="updateEditItem(${i},'name',this.value)">
       </td>
       <td>
-        <input type="number" class="form-control form-control-sm" placeholder="数量" min="0"
-          value="${item.quantity ?? ""}" oninput="updateEditItem(${i},'quantity',+this.value)">
+        <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="0"
+          value="${item.quantity ?? ""}" oninput="updateEditItem(${i},'quantity',+this.value)" onchange="updateEditItem(${i},'quantity',+this.value)">
       </td>
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
-          <input type="number" class="form-control" placeholder="金額" min="0"
-            value="${item.subtotal ?? item.unitPrice ?? ""}" oninput="updateEditItem(${i},'subtotal',+this.value)">
+          <input type="number" class="form-control item-amount-input" placeholder="金額" min="0"
+            value="${item.subtotal ?? item.unitPrice ?? ""}" oninput="updateEditItem(${i},'subtotal',+this.value)" onchange="updateEditItem(${i},'subtotal',+this.value)">
         </div>
       </td>
       <td class="text-end">
@@ -1264,9 +1268,10 @@ function renderEditItems() {
   recalcEditItemTotals();
 }
 function recalcEditItemTotals() {
-  // 総点数＝明細の数量の合計
+  // 総点数＝明細の数量の合計（画面に表示されている値をそのまま合計する）
+  const qtyInputs = document.querySelectorAll("#edit-items-container .item-qty-input");
   const el = document.getElementById("edit-total-qty");
-  if (el) el.value = editReceiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  if (el) el.value = Array.from(qtyInputs).reduce((s, i) => s + (Number(i.value) || 0), 0);
   recalcEditFinalTotal();
 }
 
@@ -1275,7 +1280,10 @@ function recalcEditItemTotals() {
 // 合計(１)＝各種売上（明細の合計、税込み）－値引き、として算出する
 // ------------------------------------------------------------
 function recalcEditFinalTotal() {
-  const subtotal   = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
+  // 画面に表示されている金額欄の値を直接合計する（editReceiptItems側の値と表示がずれていても、
+  // 目に見えている数字どおりに合計されるようにするため）
+  const amountInputs = document.querySelectorAll("#edit-items-container .item-amount-input");
+  const subtotal   = Array.from(amountInputs).reduce((s, i) => s + (Math.round(Number(i.value)) || 0), 0);
   const discount   = Number(document.getElementById("edit-discount")?.value) || 0;
   const finalTotal = Math.max(0, subtotal - discount);
   const elTotal = document.getElementById("edit-total");
