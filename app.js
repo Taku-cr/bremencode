@@ -545,13 +545,12 @@ document.getElementById("btn-add-item").addEventListener("click", () => {
 
 // スマートフォンでも横スクロール（table-responsive）で全列を見られるよう、
 // グリッドではなく<tr>で組み立てる（items-containerはHTML側で<tbody>になっている）
+// 読み取った金額はすべて税込みのため、明細は品名・数量・金額（税込み）のみ持つ
 function renderItems() {
   const el = document.getElementById("items-container");
   if (!receiptItems.length) { el.innerHTML = ""; return; }
   el.innerHTML = receiptItems.map((item, i) => {
-    const subtotal    = Math.round(item.subtotal || item.unitPrice || 0);
-    const rate        = item.taxRate ?? 0;
-    const taxIncluded = Math.round(subtotal * (1 + rate / 100));
+    const amount = Math.round(item.subtotal || item.unitPrice || 0);
     return `
     <tr>
       <td>
@@ -565,22 +564,8 @@ function renderItems() {
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
-          <input type="number" class="form-control" placeholder="小計" min="0"
-            value="${subtotal}" oninput="updateItem(${i},'subtotal',+this.value)">
-        </div>
-      </td>
-      <td>
-        <select class="form-select form-select-sm" onchange="updateItem(${i},'taxRate',+this.value)">
-          <option value="0"  ${rate === 0  ? 'selected' : ''}>非課税</option>
-          <option value="8"  ${rate === 8  ? 'selected' : ''}>8%</option>
-          <option value="10" ${rate === 10 ? 'selected' : ''}>10%</option>
-        </select>
-      </td>
-      <td>
-        <div class="input-group input-group-sm">
-          <span class="input-group-text">¥</span>
-          <input type="number" class="form-control bg-light" placeholder="税込" min="0" readonly
-            id="item-tax-${i}" value="${taxIncluded}">
+          <input type="number" class="form-control" placeholder="金額" min="0"
+            value="${amount}" oninput="updateItem(${i},'subtotal',+this.value)">
         </div>
       </td>
       <td class="text-end">
@@ -597,28 +582,14 @@ function updateItem(i, field, val) {
   if (field === "quantity" || field === "unitPrice") {
     receiptItems[i].subtotal = receiptItems[i].quantity * receiptItems[i].unitPrice;
   }
-  if (field === "taxRate") {
-    renderItems();
-  } else if (field === "subtotal" || field === "quantity" || field === "unitPrice") {
-    const base = Math.round(receiptItems[i].subtotal || receiptItems[i].unitPrice || 0);
-    const rate = receiptItems[i].taxRate ?? 0;
-    const el = document.getElementById(`item-tax-${i}`);
-    if (el) el.value = Math.round(base * (1 + rate / 100));
-  }
   recalcTotals();
 }
 
 function recalcTotals() {
-  const subtotal   = receiptItems.reduce((s, it) => s + Math.round(it.subtotal || it.unitPrice || 0), 0);
-  const total      = receiptItems.reduce((s, it) => {
-    const base = Math.round(it.subtotal || it.unitPrice || 0);
-    const rate = it.taxRate ?? 0;
-    return s + Math.round(base * (1 + rate / 100));
-  }, 0);
+  const total      = receiptItems.reduce((s, it) => s + Math.round(it.subtotal || it.unitPrice || 0), 0);
   const discount   = Number(document.getElementById("f-discount")?.value) || 0;
   const finalTotal = Math.max(0, total - discount);
 
-  document.getElementById("f-subtotal").value   = subtotal;
   document.getElementById("f-total").value       = total;
   // 総点数・取引数はレシート印字の実数値（総点数・組数）を使うべきで、明細の行数や数量合計とは
   // 一致するとは限らないため、ここでは上書きしない（手入力 or Geminiの抽出値のまま）
@@ -784,7 +755,6 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
       income:   incomeItems.filter(r => r.name || r.amount),
       expenses: expenseItems.filter(r => r.name || r.amount),
       payment: {
-        subtotal:          Number(document.getElementById("f-subtotal").value)             || 0,
         total:             Number(document.getElementById("f-total").value)                || 0,
         discount:          Number(document.getElementById("f-discount").value)             || 0,
         totalQty:          Number(document.getElementById("f-total-qty").value)            || 0,
@@ -987,7 +957,6 @@ function renderTxDetailView(tx) {
           <tr><td class="text-muted">カテゴリ</td><td>
             <span class="badge-cat" style="background:${cat.color}22;color:${cat.color}">${cat.label}</span>
           </td></tr>
-          <tr><td class="text-muted">小計</td><td>${fmtCurrency(tx.payment?.subtotal || 0)}</td></tr>
           <tr><td class="fw-bold">合計</td><td class="fw-bold fs-5">${fmtCurrency(tx.payment?.total || 0)}</td></tr>
           <tr><td class="text-muted">値引き</td><td>${tx.payment?.discount ? `-${fmtCurrency(tx.payment.discount)}` : "--"}</td></tr>
           <tr><td class="fw-bold">値引き後合計</td><td class="fw-bold">${fmtCurrency(finalTotal)}</td></tr>
@@ -1031,7 +1000,7 @@ function renderTxDetailView(tx) {
           <h6 class="text-muted small fw-bold text-uppercase">明細</h6>
           <div class="table-responsive">
           <table class="table table-sm">
-            <thead><tr><th>品名</th><th>数量</th><th class="text-end">小計</th></tr></thead>
+            <thead><tr><th>品名</th><th>数量</th><th class="text-end">金額</th></tr></thead>
             <tbody>${tx.items.map(i =>
               `<tr><td>${esc(i.name)}</td><td>${i.quantity}</td><td class="text-end">${fmtCurrency(i.subtotal || i.unitPrice)}</td></tr>`
             ).join("")}</tbody>
@@ -1107,7 +1076,7 @@ function renderTxEditForm(tx) {
                 <tr>
                   <th style="min-width:110px">品名</th>
                   <th style="min-width:70px">数量</th>
-                  <th style="min-width:110px">小計</th>
+                  <th style="min-width:110px">金額</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1116,14 +1085,7 @@ function renderTxEditForm(tx) {
           </div>
         </div>
 
-        <div class="col-6">
-          <label class="form-label small fw-bold">小計（明細の合計）</label>
-          <div class="input-group">
-            <span class="input-group-text">¥</span>
-            <input type="number" class="form-control bg-light" id="edit-subtotal" min="0" placeholder="0" readonly>
-          </div>
-        </div>
-        <div class="col-6">
+        <div class="col-12">
           <label class="form-label small fw-bold">合計（税込み合計）*</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
@@ -1266,7 +1228,7 @@ function renderEditItems() {
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text">¥</span>
-          <input type="number" class="form-control" placeholder="小計" min="0"
+          <input type="number" class="form-control" placeholder="金額" min="0"
             value="${item.subtotal ?? item.unitPrice ?? ""}" oninput="updateEditItem(${i},'subtotal',+this.value)">
         </div>
       </td>
@@ -1280,18 +1242,16 @@ function renderEditItems() {
   recalcEditItemTotals();
 }
 function recalcEditItemTotals() {
-  const subtotal = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
-  const elS = document.getElementById("edit-subtotal"); if (elS) elS.value = subtotal;
   // 総点数はレシート印字の実数値（総点数）を使うべきで、明細の数量合計とは限らないため上書きしない
   recalcEditFinalTotal();
 }
 
 // ------------------------------------------------------------
 // 編集: 値引き後の合計 / 現金残高
-// 合計(１)＝各種売上（明細の合計＝小計）－値引き、として算出する
+// 合計(１)＝各種売上（明細の合計、税込み）－値引き、として算出する
 // ------------------------------------------------------------
 function recalcEditFinalTotal() {
-  const subtotal = Number(document.getElementById("edit-subtotal")?.value)  || 0;
+  const subtotal = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
   const discount  = Number(document.getElementById("edit-discount")?.value) || 0;
   const el = document.getElementById("edit-final-total");
   if (el) el.value = Math.max(0, subtotal - discount);
@@ -1392,7 +1352,6 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
     category: document.getElementById("edit-category").value,
     payment: {
       ...(activeTx.payment || {}),
-      subtotal:          Number(document.getElementById("edit-subtotal").value)  || 0,
       total:             Number(document.getElementById("edit-total").value)     || 0,
       totalQty:          Number(document.getElementById("edit-total-qty").value) || 0,
       txCount:           val("edit-tx-count")        ?? 0,
