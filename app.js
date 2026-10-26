@@ -244,7 +244,7 @@ async function loadDashboard() {
 
     renderCategoryChart(txs);
     renderWeatherChart(txs);
-    renderRecentTx(txs.slice(0, 6));
+    loadRecentTx();
   } catch (err) {
     console.error("Dashboard:", err);
   }
@@ -259,6 +259,20 @@ async function loadDashboard() {
         document.getElementById("d-wx-loc").textContent  = w.location;
       })
       .catch(() => {});
+  }
+}
+
+// 月の絞り込みとは無関係に、登録した順（createdAt降順）で直近10件を表示する
+async function loadRecentTx() {
+  try {
+    const snap = await db.collection("transactions")
+      .where("userId", "==", currentUser.uid)
+      .orderBy("createdAt", "desc")
+      .limit(10)
+      .get();
+    renderRecentTx(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  } catch (err) {
+    console.error("RecentTx:", err);
   }
 }
 
