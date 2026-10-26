@@ -1665,6 +1665,10 @@ async function exportToCashExcel() {
       const cashBal = tx.payment?.cashBalance ?? (cashSales + incTotal - expTotal);
       out.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
       out.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
+      (tx.income || []).forEach(inc => {
+        const amt = Number(inc.amount) || 0;
+        if (amt > 0) out.push({ label, desc: inc.name || "入金", incomeAmt: amt, expenseAmt: 0, delta: +amt });
+      });
       (tx.expenses || []).forEach(exp => {
         const amt = Number(exp.amount) || 0;
         if (amt > 0) out.push({ label, desc: exp.name || "出金", incomeAmt: 0, expenseAmt: amt, delta: -amt });
