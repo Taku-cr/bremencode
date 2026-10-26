@@ -41,6 +41,12 @@ const CATEGORIES = {
 // これが無いと一覧の描画中に例外が発生し、取引一覧がまるごと表示されなくなる。
 const UNKNOWN_CATEGORY = { label: "不明", color: "#9e9e9e", icon: "fa-question" };
 
+// カテゴリがBremenの場合、明細の品名はこの部門名しか存在しないため選択式にする
+const BREMEN_ITEM_NAMES = [
+  "調理パン", "焼きこみ", "菓子パン", "デニッシュ", "フランスパン",
+  "ブレッド", "焼き菓子", "ジュース", "コーヒー", "その他"
+];
+
 // CATEGORIESを唯一の情報源として<select>の選択肢を作る（複数箇所への手書きコピーによる
 // 表記ズレを防ぐ）。f-category, filter-categoryはindex.html側は空のまま、ここで埋める。
 function populateCategorySelect(id, includeAllOption) {
@@ -554,19 +560,36 @@ document.getElementById("btn-add-item").addEventListener("click", () => {
   renderItems();
 });
 
+// カテゴリがBremenのときは品名の候補が決まっているため<select>に、それ以外は自由入力の<input>にする。
+// 既存の品名が候補に無い場合は選択肢に残して、表示を切り替えても値が消えないようにする。
+function renderItemNameField(name, onchangeExpr, isBremen) {
+  if (!isBremen) {
+    return `<input type="text" class="form-control form-control-sm" placeholder="品名"
+      value="${esc(name)}" oninput="${onchangeExpr}">`;
+  }
+  const extra = name && !BREMEN_ITEM_NAMES.includes(name)
+    ? `<option value="${esc(name)}" selected>${esc(name)}</option>` : "";
+  return `
+    <select class="form-select form-select-sm" onchange="${onchangeExpr}">
+      <option value="">選択してください</option>
+      ${BREMEN_ITEM_NAMES.map(n => `<option value="${n}" ${name === n ? "selected" : ""}>${n}</option>`).join("")}
+      ${extra}
+    </select>`;
+}
+
 // スマートフォンでも横スクロール（table-responsive）で全列を見られるよう、
 // グリッドではなく<tr>で組み立てる（items-containerはHTML側で<tbody>になっている）
 // 読み取った金額はすべて税込みのため、明細は品名・数量・金額（税込み）のみ持つ
 function renderItems() {
   const el = document.getElementById("items-container");
   if (!receiptItems.length) { el.innerHTML = ""; return; }
+  const isBremen = document.getElementById("f-category")?.value === "bremen";
   el.innerHTML = receiptItems.map((item, i) => {
     const amount = Math.round(item.subtotal || item.unitPrice || 0);
     return `
     <tr>
       <td>
-        <input type="text" class="form-control form-control-sm" placeholder="品名"
-          value="${esc(item.name)}" oninput="updateItem(${i},'name',this.value)">
+        ${renderItemNameField(item.name, `updateItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="1"
@@ -1091,7 +1114,7 @@ function renderTxEditForm(tx) {
         </div>
         <div class="col-6">
           <label class="form-label small fw-bold">カテゴリ</label>
-          <select class="form-select" id="edit-category">
+          <select class="form-select" id="edit-category" onchange="renderEditItems()">
             ${Object.entries(CATEGORIES).map(([k, c]) =>
               `<option value="${k}" ${tx.category === k ? "selected" : ""}>${c.label}</option>`
             ).join("")}
@@ -1254,11 +1277,11 @@ function updateEditItem(i, field, val) {
 // グリッドではなく<tr>で組み立てる（edit-items-containerはHTML側で<tbody>になっている）
 function renderEditItems() {
   const el = document.getElementById("edit-items-container");
+  const isBremen = document.getElementById("edit-category")?.value === "bremen";
   el.innerHTML = editReceiptItems.map((item, i) => `
     <tr>
       <td>
-        <input type="text" class="form-control form-control-sm" placeholder="品名"
-          value="${esc(item.name)}" oninput="updateEditItem(${i},'name',this.value)">
+        ${renderItemNameField(item.name, `updateEditItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="0"
