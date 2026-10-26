@@ -564,13 +564,13 @@ document.getElementById("btn-add-item").addEventListener("click", () => {
 // 既存の品名が候補に無い場合は選択肢に残して、表示を切り替えても値が消えないようにする。
 function renderItemNameField(name, onchangeExpr, isBremen) {
   if (!isBremen) {
-    return `<input type="text" class="form-control form-control-sm" placeholder="品名"
+    return `<input type="text" class="form-control form-control-sm item-name-input" placeholder="品名"
       value="${esc(name)}" oninput="${onchangeExpr}">`;
   }
   const extra = name && !BREMEN_ITEM_NAMES.includes(name)
     ? `<option value="${esc(name)}" selected>${esc(name)}</option>` : "";
   return `
-    <select class="form-select form-select-sm" onchange="${onchangeExpr}">
+    <select class="form-select form-select-sm item-name-input" onchange="${onchangeExpr}">
       <option value="">選択してください</option>
       ${BREMEN_ITEM_NAMES.map(n => `<option value="${n}" ${name === n ? "selected" : ""}>${n}</option>`).join("")}
       ${extra}
@@ -611,12 +611,25 @@ function renderItems() {
   `;}).join("");
 }
 
+// 金額は入力欄に直接入れた値がそのまま正で、数量や単価から再計算してはいけない
+// （単価欄は無いので、数量を直すたびに金額が 数量×0＝0 で上書きされ、保存データの金額が消えていた）
 function updateItem(i, field, val) {
   receiptItems[i][field] = val;
-  if (field === "quantity" || field === "unitPrice") {
-    receiptItems[i].subtotal = receiptItems[i].quantity * receiptItems[i].unitPrice;
-  }
   recalcTotals();
+}
+
+// 保存の直前に、画面に表示されている品名・数量・金額を明細データへ反映する。
+// 内部データと表示がずれていても、見えている内容がそのまま保存されるようにする安全策。
+function syncItemsFromDom(containerId, items) {
+  document.querySelectorAll(`#${containerId} tr`).forEach((tr, i) => {
+    if (!items[i]) return;
+    const name = tr.querySelector(".item-name-input");
+    const qty  = tr.querySelector(".item-qty-input");
+    const amt  = tr.querySelector(".item-amount-input");
+    if (name) items[i].name     = name.value;
+    if (qty)  items[i].quantity = Number(qty.value) || 0;
+    if (amt)  items[i].subtotal = Math.round(Number(amt.value)) || 0;
+  });
 }
 
 function recalcTotals() {
@@ -796,6 +809,8 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
         imageUrl = await storage.ref(storagePath).getDownloadURL();
       }
     }
+
+    syncItemsFromDom("items-container", receiptItems);
 
     const tx = {
       userId:      currentUser.uid,
@@ -1430,6 +1445,8 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
     return v === "" ? null : Number(v);
   };
 
+  syncItemsFromDom("edit-items-container", editReceiptItems);
+
   const update = {
     receiptDate: date,
     store:    { ...(activeTx.store || {}), name: document.getElementById("edit-store").value.trim() },
@@ -1537,9 +1554,32 @@ function appendCashCheckRow(ws, thin, diff) {
 async function exportToExcel() {
   if (!allTxs.length) { showToast("エクスポートするデータがありません", "warning"); return; }
 
+  // 売上テンプレート（Bremencote売上テンプレート.xlsx）と同じ列構成・見出し・書式で出力する。
+  // 見出しの括弧書きは、アプリ側のどの項目を集計するかを示している。
   const DAYS      = ["日", "月", "火", "水", "木", "金", "土"];
   const PROD_COLS = ["調理パン", "焼きこみ", "菓子パン", "焼き菓子", "フランスパン", "デニッシュ", "ブレッド", "ジュース", "コーヒー", "未登録商品", "その他"];
-  const HEADERS   = ["月日", "曜日", "気温", "天気", "コメント", "個数", "客単価", "客数", "売上", "入金", "同志社", "bremen合計", "①売上合計", "値引き", ...PROD_COLS, "②売上合計"];
+  // 商品列の見出しはテンプレートの表記（半角カナ混じり）。品名の判定にはPROD_COLSを使う
+  const HEADERS   = [
+    "月日", "曜日", "", "天気/気温", "コメント", "個数(総点数)", "客単価", "客数(取引数)",
+    "売上(値引き後の合計)", "入金", "入金(同志社)",
+    "合計(売上(値引き後の合計)＋入金＋入金(同志社))",
+    "合計(Bremenの売上(値引き後の合計)＋Coteacoteの売上(値引き後の合計))",
+    "値引き",
+    "調理パン", "焼きこみ", "菓子パン", "焼き菓子", "フランスパン", "ﾃﾞﾆｯｼｭ", "ブレッド", "ジュース", "ｺｰﾋー", "未登録商品", "その他",
+    "売上(値引き～その他までをSUM)"
+  ];
+  // 月間計の下に付く、レジの部門名との対応表（テンプレートのとおり）
+  const LEGEND = [
+    "月日", "曜日", "", "天気/気温", "コメント", "個数", "", "",
+    "売上", "入金", "入金", "計", "", "ﾎﾟｲﾝﾄｶｰﾄﾞ",
+    "ｻﾝﾄﾞ・調理", "焼きこみ", "菓子パン・焼込", "焼き菓子", "フランスパン", "ﾃﾞﾆｯｼｭ", "ブレッド", "ジュース", "ｺｰﾋー", "未登録商品", "その他", ""
+  ];
+  const FIRST_ROW = 3, LAST_ROW = 33;           // 日付行（最大31日分）
+  const TOTAL_ROW = 34, LEGEND_ROW = 35;
+  const FMT_COUNT = "#,##0_ ", FMT_YEN = '"¥"#,##0;"¥"-#,##0';
+  const FILL = rgb => ({ type: "pattern", pattern: "solid", fgColor: { argb: rgb } });
+  const FONT = (size = 11, bold = true) => ({ name: "游ゴシック", size, bold });
+  const colLetter = n => { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 
   const byDate = {};
   allTxs.forEach(tx => {
@@ -1548,36 +1588,63 @@ async function exportToExcel() {
     byDate[k].push(tx);
   });
 
+  // 「Bremen」の列にはcote a cote以外の取引（旧分類の取引を含む）を集計し、
+  // cote a coteの売上は「合計(Bremen＋Coteacote)」列にだけ加算する
+  const isCote   = t => t.category === "cote_a_cote";
+  const salesOf  = txs => txs.reduce((s, t) => s + (itemsTotal(t.items) - (t.payment?.discount || 0)), 0);
+
   const wb   = new ExcelJS.Workbook();
   const thin = { style: "thin" };
 
   getBillingPeriods(Object.keys(byDate))
     .forEach(({ start, end, sheetName }) => {
-      const ws        = wb.addWorksheet(sheetName);
+      const ws = wb.addWorksheet(sheetName);
 
-      ws.addRow(HEADERS);
+      const widths = [7, 6, 3, 14, 16, 10, 9, 10, 13, 10, 12, 16, 16, 10, 11, 11, 11, 11, 13, 11, 11, 11, 11, 12, 11, 15];
+      widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
+      // 1行目: 店名と期間
+      const fmtD = d => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+      ws.getCell("A1").value = "bremen";
+      ws.getCell("A1").font  = FONT();
+      ws.getCell("D1").value = `${fmtD(start)}～${fmtD(end)}`;
+      ws.getCell("D1").font  = FONT();
+
+      // 2行目: 見出し
+      HEADERS.forEach((h, i) => {
+        const c = ws.getCell(2, i + 1);
+        c.value = h || null;
+        c.font  = FONT(i === 3 || i === 4 ? 10 : 11, i > 2);
+        c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      });
+      ws.getRow(2).height = 78;
+
+      // 日別の集計値を作る（月間計の「計算結果」の保持にも使う）
+      const days = [];
       let cur = new Date(start);
       while (cur <= end) {
-        const ds  = toLocalStr(cur);
-        const txs = byDate[ds] || [];
+        const ds      = toLocalStr(cur);
+        const all     = byDate[ds] || [];
+        const txs     = all.filter(t => !isCote(t));
+        const coteTxs = all.filter(isCote);
 
-        const weather    = txs.find(t => t.weather)?.weather;
+        const weather    = (txs.find(t => t.weather) || coteTxs.find(t => t.weather))?.weather;
+        const weatherTxt = weather
+          ? `${weather.description || weather.condition || ""}/${Number.isFinite(weather.temp) ? weather.temp.toFixed(1) : ""}℃`
+          : "";
         const notes      = [...new Set(txs.map(t => t.notes).filter(Boolean))].join("、");
         // 合計(１)＝各種売上（明細の合計）－値引き、を取引ごとに算出して日計する
-        const totalSales = txs.reduce((s, t) => s + (itemsTotal(t.items) - (t.payment?.discount || 0)), 0);
+        const totalSales = salesOf(txs);
         const discount   = txs.reduce((s, t) => s + (t.payment?.discount || 0), 0);
         const txCount    = txs.reduce((s, t) => s + (t.payment?.txCount  || 0), 0);
         const totalQty   = txs.reduce((s, t) =>
           s + (t.payment?.totalQty || (t.items || []).reduce((is, item) => is + (Number(item.quantity) || 0), 0)), 0);
         // 客単価＝値引き後の合計／取引数
         const cup        = txCount > 0 ? Math.round(totalSales / txCount) : null;
-        const cumSales   = txs.reduce((s, t) => s + (t.payment?.cumulativeSales || 0), 0);
 
         const allInc         = txs.flatMap(t => t.income || []);
         const doshisha       = allInc.filter(r => r.name === "同志社").reduce((s, r) => s + (Number(r.amount) || 0), 0);
         const nonDoshishaInc = allInc.filter(r => r.name !== "同志社").reduce((s, r) => s + (Number(r.amount) || 0), 0);
-        const bremenTotal    = totalSales + nonDoshishaInc + doshisha;
 
         const prod = Object.fromEntries(PROD_COLS.map(p => [p, 0]));
         let hasUnnamedItems = false;
@@ -1592,35 +1659,115 @@ async function exportToExcel() {
           else                       { prod["未登録商品"] += amt; hasUnnamedItems = true; }
         }));
 
-        ws.addRow([
-          `${cur.getMonth()+1}/${cur.getDate()}`,
-          DAYS[cur.getDay()],
-          weather?.temp ?? "",
-          weather?.condition || "",
-          notes,
-          totalQty       || "",
-          cup            ?? "",
-          txCount        || "",
-          totalSales     || "",
-          nonDoshishaInc || "",
-          doshisha       || "",
-          bremenTotal    || "",
-          "",
-          discount ? -discount : "",
-          ...PROD_COLS.map(p =>
-            p === "未登録商品" ? (hasUnnamedItems ? prod[p] : "") : (prod[p] || "")
-          ),
-          (PROD_COLS.reduce((s, p) => s + (prod[p] || 0), 0) - discount) || "",
-        ]);
+        days.push({
+          cur: new Date(cur),
+          has: txs.length > 0,
+          hasAny: all.length > 0,
+          weatherTxt, notes, totalQty, cup, txCount, totalSales, discount,
+          nonDoshishaInc, doshisha,
+          lTotal: totalSales + nonDoshishaInc + doshisha,
+          // 合計(Bremen＋Coteacote)は、両店の「売上(値引き後の合計)」の和
+          mTotal: totalSales + salesOf(coteTxs),
+          prod, hasUnnamedItems,
+          zTotal: PROD_COLS.reduce((s, p) => s + (prod[p] || 0), 0) - discount,
+        });
         cur.setDate(cur.getDate() + 1);
       }
 
-      // A1:Z31 に罫線を適用
-      for (let r = 1; r <= 31; r++) {
+      // 3〜33行目: 日付行（31日分の枠を常に用意する）
+      const sums = {};
+      const addSum = (key, v) => { sums[key] = (sums[key] || 0) + (Number(v) || 0); };
+      for (let i = 0; i < LAST_ROW - FIRST_ROW + 1; i++) {
+        const r = FIRST_ROW + i;
+        const d = days[i];
+        const set = (col, value, fmt, extra = {}) => {
+          const c = ws.getCell(r, col);
+          if (value !== undefined && value !== null && value !== "") c.value = value;
+          if (fmt) c.numFmt = fmt;
+          c.font = extra.font || FONT();
+          if (extra.alignment) c.alignment = extra.alignment;
+          if (extra.fill)      c.fill = extra.fill;
+        };
+        const center10 = { font: FONT(10), alignment: { horizontal: "center", vertical: "middle" } };
+        const green = { fill: FILL("FFCCFFCC") };
+
+        // A〜C: 月日・曜日（日付はシリアル値で入れ、m/d表示にする）
+        set(1, d ? new Date(Date.UTC(d.cur.getFullYear(), d.cur.getMonth(), d.cur.getDate())) : null, "m/d;@", green);
+        set(2, d ? DAYS[d.cur.getDay()] : null, null, green);
+        set(3, null, null, green);
+        set(4, d?.has || d?.hasAny ? d.weatherTxt : "", "@", center10);
+        set(5, d?.notes, "@", center10);
+        set(6, d?.has ? d.totalQty : null);
+        set(7, d?.has && d.cup != null ? d.cup : null, "0_ ");
+        set(8, d?.has ? d.txCount : null);
+        set(9,  d?.has ? d.totalSales : null, FMT_COUNT);
+        set(10, d?.has && d.nonDoshishaInc ? d.nonDoshishaInc : null, FMT_COUNT);
+        set(11, d?.has && d.doshisha ? d.doshisha : null, FMT_YEN);
+        // L・Zは行内の式にしておき、後から手で直しても合計が追従するようにする
+        if (d?.has) {
+          ws.getCell(r, 12).value = { formula: `SUM(I${r}:K${r})`, result: d.lTotal };
+          ws.getCell(r, 26).value = { formula: `SUM(N${r}:Y${r})`, result: d.zTotal };
+        }
+        ws.getCell(r, 12).numFmt = FMT_COUNT; ws.getCell(r, 12).font = FONT(); ws.getCell(r, 12).fill = FILL("FFCCFFFF");
+        ws.getCell(r, 26).numFmt = FMT_COUNT; ws.getCell(r, 26).font = FONT();
+        set(13, d?.hasAny ? d.mTotal : null, FMT_COUNT);
+        set(14, d?.has && d.discount ? -d.discount : null, FMT_COUNT);
+        PROD_COLS.forEach((p, k) => {
+          const v = d?.has ? (p === "未登録商品" ? (d.hasUnnamedItems ? d.prod[p] : null) : (d.prod[p] || null)) : null;
+          set(15 + k, v, FMT_COUNT);
+        });
+
+        if (d?.has) {
+          addSum("F", d.totalQty); addSum("H", d.txCount); addSum("I", d.totalSales);
+          addSum("J", d.nonDoshishaInc); addSum("K", d.doshisha); addSum("L", d.lTotal);
+          addSum("N", d.discount ? -d.discount : 0);
+          PROD_COLS.forEach((p, k) => addSum(colLetter(15 + k), d.prod[p]));
+          addSum("Z", d.zTotal);
+        }
+        if (d?.hasAny) addSum("M", d.mTotal);
+      }
+
+      // 34行目: 月間計
+      const t = (col) => sums[col] || 0;
+      const setTotal = (col, formula, result, fmt, extra = {}) => {
+        const c = ws.getCell(TOTAL_ROW, col);
+        c.value = { formula, result };
+        c.numFmt = fmt;
+        c.font   = FONT();
+        if (extra.fill) c.fill = extra.fill;
+      };
+      ws.getCell(TOTAL_ROW, 1).value = "月間計";
+      ws.getCell(TOTAL_ROW, 1).font  = FONT();
+      setTotal(6, `SUM(F${FIRST_ROW}:F${LAST_ROW})`, t("F"), FMT_COUNT);
+      setTotal(7, `IF(H${TOTAL_ROW}=0,"",I${TOTAL_ROW}/H${TOTAL_ROW})`, t("H") ? t("I") / t("H") : "", "0_ ");
+      setTotal(8, `SUM(H${FIRST_ROW}:H${LAST_ROW})`, t("H"), FMT_COUNT);
+      setTotal(9,  `SUM(I${FIRST_ROW}:I${LAST_ROW})`, t("I"), FMT_COUNT);
+      setTotal(10, `SUM(J${FIRST_ROW}:J${LAST_ROW})`, t("J"), FMT_COUNT);
+      setTotal(11, `SUM(K${FIRST_ROW}:K${LAST_ROW})`, t("K"), "0_ ");
+      setTotal(12, `SUM(L${FIRST_ROW}:L${LAST_ROW})`, t("L"), FMT_COUNT, { fill: FILL("FFCCFFFF") });
+      setTotal(13, `SUM(M${FIRST_ROW}:M${LAST_ROW})`, t("M"), FMT_COUNT, { fill: FILL("FFFFFF99") });
+      for (let col = 14; col <= 26; col++) {
+        const L = colLetter(col);
+        setTotal(col, `SUM(${L}${FIRST_ROW}:${L}${LAST_ROW})`, t(L), FMT_COUNT);
+      }
+
+      // 35行目: レジの部門名との対応表
+      LEGEND.forEach((h, i) => {
+        const c = ws.getCell(LEGEND_ROW, i + 1);
+        c.value = h || null;
+        c.font  = FONT(i < 3 ? 10 : 11, i >= 3);
+      });
+
+      // 2〜35行目に罫線（表の外側の1行目は罫線なし）
+      for (let r = 2; r <= LEGEND_ROW; r++) {
         for (let c = 1; c <= 26; c++) {
-          ws.getCell(r, c).border = { top: thin, bottom: thin, left: thin, right: thin };
+          const color = r >= TOTAL_ROW ? { argb: "FF008000" } : undefined;
+          const side  = color ? { ...thin, color } : thin;
+          ws.getCell(r, c).border = { top: side, bottom: side, left: side, right: side };
         }
       }
+      for (const c of [1, 2, 3]) ws.getCell(2, c).fill = FILL("FFCCFFCC");
+      ws.getCell(2, 12).fill = FILL("FFCCFFFF");
     });
 
   const buffer = await wb.xlsx.writeBuffer();
