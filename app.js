@@ -1551,6 +1551,28 @@ function appendCashCheckRow(ws, thin, diff) {
   }
 }
 
+// 売上Excelの書式（Bremencote売上テンプレート.xlsxの1〜35行×A〜Z列の各セルから書き出したもの）。
+// palette: 書式の種類（f=表示形式 z=文字サイズ b=太字 fill=背景色 bd=罫線 t/b/l/r（K=黒 G=緑） al=配置）
+// classes: 行ごとの「列→palette番号」の並び / rowClass: 1〜35行目がどのclassか
+const SALES_TPL = {
+  palette: [{"z":11,"b":1},{"f":"m/d;@","z":11,"b":1},{"f":"0_);[Red](0)","z":11,"b":1},{"f":"\"¥\"#,##0_);[Red](\"¥\"#,##0)","z":11,"b":1},{"f":"#,##0_ ","z":11,"b":1},{"z":11,"b":1,"bd":{"b":"K"}},{"f":"m/d;@","z":11,"fill":"CCFFCC","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"z":11,"fill":"CCFFCC","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"z":10,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"},"al":["center","middle"]},{"f":"#,##0_ ","z":10,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"},"al":["center","middle"]},{"z":11,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"0_ ","z":11,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"\"¥\"#,##0;\"¥\"-#,##0","z":11,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"#,##0_ ","z":11,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"#,##0_ ","z":11,"b":1,"fill":"CCFFFF","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"#,##0_ ","z":11,"b":1,"fill":"FFFFFF","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"m/d;@","z":11,"b":1,"fill":"CCFFCC","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"z":11,"b":1,"fill":"CCFFCC","bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"@","z":10,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"},"al":["center","middle"]},{"f":"#,##0_ ","z":11,"b":1,"fill":"CCFFFF","bd":{"t":"K","l":"K","r":"K"}},{"f":"#,##0_ ","z":11,"b":1,"bd":{"t":"K","l":"K","r":"K"}},{"f":"m/d;@","z":11,"b":1,"bd":{"t":"G","l":"G","r":"G"}},{"z":11,"b":1,"bd":{"t":"G","l":"G","r":"G"}},{"z":11,"b":1,"bd":{"t":"K","l":"K","r":"K"}},{"z":10,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"#,##0_ ","z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"0_ ","z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"#,##0_ ","z":11,"b":1,"fill":"CCFFFF","bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"#,##0_ ","z":11,"b":1,"fill":"FFFF99","bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"m/d;@","z":10,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"z":10,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"z":10,"b":1,"bd":{"t":"K","b":"K","r":"K"}},{"f":"#,##0_ ","z":10,"b":1,"bd":{"t":"K","b":"K","l":"K","r":"K"}},{"f":"#,##0_);[Red](#,##0)","z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"\"¥\"#,##0;\"¥\"-#,##0","z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}},{"f":"\"¥\"#,##0_);[Red](\"¥\"#,##0)","z":11,"b":1,"bd":{"t":"G","b":"G","l":"G","r":"G"}}],
+  classes: [[0,0,0,1,2,0,0,0,0,0,0,3,0,4,0,0,0,0,0,0,0,0,0,0,0,5],[6,7,7,8,9,10,11,10,12,13,11,14,15,13,11,11,11,11,11,16,11,11,11,11,11,12],[17,18,18,19,19,10,11,10,13,13,12,14,13,13,13,13,13,13,13,13,13,13,13,13,13,13],[17,18,18,19,19,10,11,10,13,13,12,20,21,13,13,13,13,13,13,13,13,13,13,13,13,13],[22,23,24,25,19,26,27,26,26,26,27,28,29,13,13,13,13,13,13,13,13,13,13,13,13,26],[30,31,31,32,33,16,34,16,35,26,27,27,36,13,11,11,11,11,11,16,11,11,11,11,11,16]],
+  rowClass: [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,4,5]
+};
+
+function applySalesTplStyle(cell, row, col) {
+  const s = SALES_TPL.palette[SALES_TPL.classes[SALES_TPL.rowClass[row - 1]][col - 1]];
+  // schemeを付けるとExcel側でテーマのフォント（この出力ではCalibri）に置き換わってしまうため付けない
+  cell.font = { name: "游ゴシック", family: 3, charset: 128, size: s.z, bold: !!s.b };
+  if (s.f)    cell.numFmt = s.f;
+  if (s.fill) cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + s.fill } };
+  if (s.al)   cell.alignment = { horizontal: s.al[0] || undefined, vertical: s.al[1] || undefined };
+  if (s.bd) {
+    const side = k => s.bd[k] ? { style: "thin", color: { argb: s.bd[k] === "G" ? "FF008000" : "FF000000" } } : undefined;
+    cell.border = { top: side("t"), bottom: side("b"), left: side("l"), right: side("r") };
+  }
+}
+
 async function exportToExcel() {
   if (!allTxs.length) { showToast("エクスポートするデータがありません", "warning"); return; }
 
@@ -1576,9 +1598,6 @@ async function exportToExcel() {
   ];
   const FIRST_ROW = 3, LAST_ROW = 33;           // 日付行（最大31日分）
   const TOTAL_ROW = 34, LEGEND_ROW = 35;
-  const FMT_COUNT = "#,##0_ ", FMT_YEN = '"¥"#,##0;"¥"-#,##0';
-  const FILL = rgb => ({ type: "pattern", pattern: "solid", fgColor: { argb: rgb } });
-  const FONT = (size = 11, bold = true) => ({ name: "游ゴシック", size, bold });
   const colLetter = n => { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 
   const byDate = {};
@@ -1594,7 +1613,6 @@ async function exportToExcel() {
   const salesOf  = txs => txs.reduce((s, t) => s + (itemsTotal(t.items) - (t.payment?.discount || 0)), 0);
 
   const wb   = new ExcelJS.Workbook();
-  const thin = { style: "thin" };
 
   getBillingPeriods(Object.keys(byDate))
     .forEach(({ start, end, sheetName }) => {
@@ -1602,22 +1620,15 @@ async function exportToExcel() {
 
       const widths = [7, 6, 3, 14, 16, 10, 9, 10, 13, 10, 12, 16, 16, 10, 11, 11, 11, 11, 13, 11, 11, 11, 11, 12, 11, 15];
       widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+      ws.properties.defaultRowHeight = 18;
 
       // 1行目: 店名と期間
       const fmtD = d => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
       ws.getCell("A1").value = "bremen";
-      ws.getCell("A1").font  = FONT();
       ws.getCell("D1").value = `${fmtD(start)}～${fmtD(end)}`;
-      ws.getCell("D1").font  = FONT();
 
-      // 2行目: 見出し
-      HEADERS.forEach((h, i) => {
-        const c = ws.getCell(2, i + 1);
-        c.value = h || null;
-        c.font  = FONT(i === 3 || i === 4 ? 10 : 11, i > 2);
-        c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-      });
-      ws.getRow(2).height = 78;
+      // 2行目: 見出し（色・罫線・書式は最後にテンプレートどおり一括で適用する）
+      HEADERS.forEach((h, i) => { ws.getCell(2, i + 1).value = h || null; });
 
       // 日別の集計値を作る（月間計の「計算結果」の保持にも使う）
       const days = [];
@@ -1680,41 +1691,31 @@ async function exportToExcel() {
       for (let i = 0; i < LAST_ROW - FIRST_ROW + 1; i++) {
         const r = FIRST_ROW + i;
         const d = days[i];
-        const set = (col, value, fmt, extra = {}) => {
-          const c = ws.getCell(r, col);
-          if (value !== undefined && value !== null && value !== "") c.value = value;
-          if (fmt) c.numFmt = fmt;
-          c.font = extra.font || FONT();
-          if (extra.alignment) c.alignment = extra.alignment;
-          if (extra.fill)      c.fill = extra.fill;
+        const set = (col, value) => {
+          if (value !== undefined && value !== null && value !== "") ws.getCell(r, col).value = value;
         };
-        const center10 = { font: FONT(10), alignment: { horizontal: "center", vertical: "middle" } };
-        const green = { fill: FILL("FFCCFFCC") };
 
         // A〜C: 月日・曜日（日付はシリアル値で入れ、m/d表示にする）
-        set(1, d ? new Date(Date.UTC(d.cur.getFullYear(), d.cur.getMonth(), d.cur.getDate())) : null, "m/d;@", green);
-        set(2, d ? DAYS[d.cur.getDay()] : null, null, green);
-        set(3, null, null, green);
-        set(4, d?.has || d?.hasAny ? d.weatherTxt : "", "@", center10);
-        set(5, d?.notes, "@", center10);
+        set(1, d ? new Date(Date.UTC(d.cur.getFullYear(), d.cur.getMonth(), d.cur.getDate())) : null);
+        set(2, d ? DAYS[d.cur.getDay()] : null);
+        set(4, d?.has || d?.hasAny ? d.weatherTxt : "");
+        set(5, d?.notes);
         set(6, d?.has ? d.totalQty : null);
-        set(7, d?.has && d.cup != null ? d.cup : null, "0_ ");
+        set(7, d?.has && d.cup != null ? d.cup : null);
         set(8, d?.has ? d.txCount : null);
-        set(9,  d?.has ? d.totalSales : null, FMT_COUNT);
-        set(10, d?.has && d.nonDoshishaInc ? d.nonDoshishaInc : null, FMT_COUNT);
-        set(11, d?.has && d.doshisha ? d.doshisha : null, FMT_YEN);
+        set(9,  d?.has ? d.totalSales : null);
+        set(10, d?.has && d.nonDoshishaInc ? d.nonDoshishaInc : null);
+        set(11, d?.has && d.doshisha ? d.doshisha : null);
         // L・Zは行内の式にしておき、後から手で直しても合計が追従するようにする
         if (d?.has) {
           ws.getCell(r, 12).value = { formula: `SUM(I${r}:K${r})`, result: d.lTotal };
           ws.getCell(r, 26).value = { formula: `SUM(N${r}:Y${r})`, result: d.zTotal };
         }
-        ws.getCell(r, 12).numFmt = FMT_COUNT; ws.getCell(r, 12).font = FONT(); ws.getCell(r, 12).fill = FILL("FFCCFFFF");
-        ws.getCell(r, 26).numFmt = FMT_COUNT; ws.getCell(r, 26).font = FONT();
-        set(13, d?.hasAny ? d.mTotal : null, FMT_COUNT);
-        set(14, d?.has && d.discount ? -d.discount : null, FMT_COUNT);
+        set(13, d?.hasAny ? d.mTotal : null);
+        set(14, d?.has && d.discount ? -d.discount : null);
         PROD_COLS.forEach((p, k) => {
           const v = d?.has ? (p === "未登録商品" ? (d.hasUnnamedItems ? d.prod[p] : null) : (d.prod[p] || null)) : null;
-          set(15 + k, v, FMT_COUNT);
+          set(15 + k, v);
         });
 
         if (d?.has) {
@@ -1729,45 +1730,25 @@ async function exportToExcel() {
 
       // 34行目: 月間計
       const t = (col) => sums[col] || 0;
-      const setTotal = (col, formula, result, fmt, extra = {}) => {
-        const c = ws.getCell(TOTAL_ROW, col);
-        c.value = { formula, result };
-        c.numFmt = fmt;
-        c.font   = FONT();
-        if (extra.fill) c.fill = extra.fill;
+      const setTotal = (col, formula, result) => {
+        ws.getCell(TOTAL_ROW, col).value = { formula, result };
       };
       ws.getCell(TOTAL_ROW, 1).value = "月間計";
-      ws.getCell(TOTAL_ROW, 1).font  = FONT();
-      setTotal(6, `SUM(F${FIRST_ROW}:F${LAST_ROW})`, t("F"), FMT_COUNT);
-      setTotal(7, `IF(H${TOTAL_ROW}=0,"",I${TOTAL_ROW}/H${TOTAL_ROW})`, t("H") ? t("I") / t("H") : "", "0_ ");
-      setTotal(8, `SUM(H${FIRST_ROW}:H${LAST_ROW})`, t("H"), FMT_COUNT);
-      setTotal(9,  `SUM(I${FIRST_ROW}:I${LAST_ROW})`, t("I"), FMT_COUNT);
-      setTotal(10, `SUM(J${FIRST_ROW}:J${LAST_ROW})`, t("J"), FMT_COUNT);
-      setTotal(11, `SUM(K${FIRST_ROW}:K${LAST_ROW})`, t("K"), "0_ ");
-      setTotal(12, `SUM(L${FIRST_ROW}:L${LAST_ROW})`, t("L"), FMT_COUNT, { fill: FILL("FFCCFFFF") });
-      setTotal(13, `SUM(M${FIRST_ROW}:M${LAST_ROW})`, t("M"), FMT_COUNT, { fill: FILL("FFFFFF99") });
-      for (let col = 14; col <= 26; col++) {
+      setTotal(6, `SUM(F${FIRST_ROW}:F${LAST_ROW})`, t("F"));
+      setTotal(7, `IF(H${TOTAL_ROW}=0,"",I${TOTAL_ROW}/H${TOTAL_ROW})`, t("H") ? t("I") / t("H") : "");
+      setTotal(8, `SUM(H${FIRST_ROW}:H${LAST_ROW})`, t("H"));
+      for (let col = 9; col <= 26; col++) {
         const L = colLetter(col);
-        setTotal(col, `SUM(${L}${FIRST_ROW}:${L}${LAST_ROW})`, t(L), FMT_COUNT);
+        setTotal(col, `SUM(${L}${FIRST_ROW}:${L}${LAST_ROW})`, t(L));
       }
 
       // 35行目: レジの部門名との対応表
-      LEGEND.forEach((h, i) => {
-        const c = ws.getCell(LEGEND_ROW, i + 1);
-        c.value = h || null;
-        c.font  = FONT(i < 3 ? 10 : 11, i >= 3);
-      });
+      LEGEND.forEach((h, i) => { ws.getCell(LEGEND_ROW, i + 1).value = h || null; });
 
-      // 2〜35行目に罫線（表の外側の1行目は罫線なし）
-      for (let r = 2; r <= LEGEND_ROW; r++) {
-        for (let c = 1; c <= 26; c++) {
-          const color = r >= TOTAL_ROW ? { argb: "FF008000" } : undefined;
-          const side  = color ? { ...thin, color } : thin;
-          ws.getCell(r, c).border = { top: side, bottom: side, left: side, right: side };
-        }
+      // 色・罫線・フォント・表示形式・配置は、テンプレートの各セルの書式をそのまま適用する
+      for (let r = 1; r <= LEGEND_ROW; r++) {
+        for (let c = 1; c <= 26; c++) applySalesTplStyle(ws.getCell(r, c), r, c);
       }
-      for (const c of [1, 2, 3]) ws.getCell(2, c).fill = FILL("FFCCFFCC");
-      ws.getCell(2, 12).fill = FILL("FFCCFFFF");
     });
 
   const buffer = await wb.xlsx.writeBuffer();
