@@ -191,7 +191,7 @@ document.getElementById("sidebar-overlay").addEventListener("click", closeSideba
 // ナビリンクをタップしたらサイドバーを閉じる（スマホ）
 document.querySelectorAll("#sidebar [data-view]").forEach(link => {
   link.addEventListener("click", () => {
-    if (window.innerWidth < 768) closeSidebar();
+    if (window.innerWidth < 992) closeSidebar();
   });
 });
 
