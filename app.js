@@ -656,13 +656,13 @@ function updateExpenseTotal() {
   updateCashBalance();
 }
 
+// 現金残高＝現金売上＋入金－出金（レシートの[理論在高]セクションと同じ考え方）
 function updateCashBalance() {
-  const finalTotal      = Number(document.getElementById("f-final-total")?.value)      || 0;
-  const cumulativeSales = Number(document.getElementById("f-cumulative-sales")?.value)  || 0;
-  const expenseTotal    = Number(document.getElementById("f-expense-total")?.value)     || 0;
-  const incomeTotal     = incomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  const balance         = finalTotal - cumulativeSales + incomeTotal - expenseTotal;
-  const el              = document.getElementById("f-cash-balance");
+  const cashSales     = Number(document.getElementById("f-cash-sales")?.value)     || 0;
+  const expenseTotal  = Number(document.getElementById("f-expense-total")?.value)  || 0;
+  const incomeTotal   = incomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const balance       = cashSales + incomeTotal - expenseTotal;
+  const el            = document.getElementById("f-cash-balance");
   if (el) el.value = balance || "";
 }
 
@@ -975,7 +975,8 @@ function renderTxDetailView(tx) {
   const incomeTotal  = (tx.income   || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   // 合計(１)＝各種売上（明細の合計）－値引き
   const finalTotal   = itemsTotal(tx.items) - (tx.payment?.discount || 0);
-  const cashBalance  = finalTotal - (tx.payment?.cumulativeSales || 0) + incomeTotal - expenseTotal;
+  // 現金残高＝現金売上＋入金－出金
+  const cashBalance  = (tx.payment?.cashSales || 0) + incomeTotal - expenseTotal;
   // 客単価＝値引き後の合計／取引数
   const txCount      = tx.payment?.txCount || 0;
   const cup          = txCount > 0 ? Math.round(finalTotal / txCount) : null;
@@ -1172,7 +1173,7 @@ function renderTxEditForm(tx) {
           <label class="form-label small fw-bold">現金売上</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}" oninput="updateEditTotal2()">
+            <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}" oninput="updateEditTotal2(); updateEditCashBalance()">
           </div>
         </div>
         <div class="col-6 col-md-4">
@@ -1318,13 +1319,13 @@ function updateEditTotal2() {
   const el = document.getElementById("edit-total2");
   if (el) el.value = cum + cash;
 }
+// 現金残高＝現金売上＋入金－出金（レシートの[理論在高]セクションと同じ考え方）
 function updateEditCashBalance() {
-  const finalTotal      = Number(document.getElementById("edit-final-total")?.value)   || 0;
-  const cumulativeSales = Number(document.getElementById("edit-cumsales")?.value)      || 0;
-  const expenseTotal    = Number(document.getElementById("edit-expense-total")?.value) || 0;
-  const incomeTotal     = editIncomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const cashSales    = Number(document.getElementById("edit-cashsales")?.value)      || 0;
+  const expenseTotal = Number(document.getElementById("edit-expense-total")?.value)  || 0;
+  const incomeTotal  = editIncomeItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const el = document.getElementById("edit-cash-balance");
-  if (el) el.value = finalTotal - cumulativeSales + incomeTotal - expenseTotal || "";
+  if (el) el.value = cashSales + incomeTotal - expenseTotal || "";
 }
 
 // ------------------------------------------------------------
@@ -1633,11 +1634,12 @@ async function exportToCashExcel() {
       // 合計(１)＝各種売上（明細の合計）－値引き
       const finalTotal = itemsTotal(tx.items) - (tx.payment?.discount || 0);
       const cumSales   = tx.payment?.cumulativeSales || 0;
+      const cashSales  = tx.payment?.cashSales || 0;
       const expTotal   = (tx.expenses || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const incTotal   = (tx.income   || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       // 京信への入金額はレシートに印字された「合計（３）理論在高」をそのまま使う
       // （他の数字からの逆算にすると必ず帳尻が合ってしまい、照合チェックとして機能しないため）
-      const cashBal = tx.payment?.cashBalance ?? (finalTotal - cumSales + incTotal - expTotal);
+      const cashBal = tx.payment?.cashBalance ?? (cashSales + incTotal - expTotal);
       out.push({ label, desc: "売上",                incomeAmt: finalTotal, expenseAmt: 0,        delta: +finalTotal });
       out.push({ label, desc: "クレジット　電子マネー", incomeAmt: 0,          expenseAmt: cumSales, delta: -cumSales   });
       (tx.expenses || []).forEach(exp => {
