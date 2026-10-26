@@ -533,7 +533,6 @@ function applyAnalysisToForm(data) {
   if (data.category)         document.getElementById("f-category").value = data.category;
   if (data.payment?.discount) document.getElementById("f-discount").value = data.payment.discount;
   if (data.items?.length)    { receiptItems = data.items; renderItems(); }
-  if (data.payment?.totalQty)           document.getElementById("f-total-qty").value           = data.payment.totalQty;
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
   if (data.payment?.cumulativeSales)   document.getElementById("f-cumulative-sales").value      = data.payment.cumulativeSales;
   if (data.payment?.cashSales != null)    document.getElementById("f-cash-sales").value        = data.payment.cashSales;
@@ -604,8 +603,10 @@ function recalcTotals() {
   const finalTotal = Math.max(0, total - discount);
 
   document.getElementById("f-total").value       = total;
-  // 総点数・取引数はレシート印字の実数値（総点数・組数）を使うべきで、明細の行数や数量とは
-  // 一致するとは限らないため、ここでは上書きしない（手入力 or Geminiの抽出値のまま）
+  // 総点数＝明細の数量の合計
+  document.getElementById("f-total-qty").value   = receiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  // 取引数はレシート印字の実数値（組数）を使うべきで、明細の行数とは一致するとは限らないため
+  // ここでは上書きしない（手入力 or Geminiの抽出値のまま）
   document.getElementById("f-final-total").value = finalTotal;
 
   // 客単価＝値引き後の合計／取引数
@@ -1116,7 +1117,7 @@ function renderTxEditForm(tx) {
 
         <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">総点数</label>
-          <input type="number" class="form-control" id="edit-total-qty" min="0" placeholder="0" value="${p.totalQty ?? ""}">
+          <input type="number" class="form-control bg-light" id="edit-total-qty" min="0" placeholder="0" readonly>
         </div>
         <div class="col-6 col-md-3">
           <label class="form-label small fw-bold">取引数</label>
@@ -1263,7 +1264,9 @@ function renderEditItems() {
   recalcEditItemTotals();
 }
 function recalcEditItemTotals() {
-  // 総点数はレシート印字の実数値（総点数）を使うべきで、明細の数量合計とは限らないため上書きしない
+  // 総点数＝明細の数量の合計
+  const el = document.getElementById("edit-total-qty");
+  if (el) el.value = editReceiptItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
   recalcEditFinalTotal();
 }
 
