@@ -1108,10 +1108,10 @@ function renderTxEditForm(tx) {
         </div>
 
         <div class="col-12">
-          <label class="form-label small fw-bold">合計（税込み合計）*</label>
+          <label class="form-label small fw-bold">合計（税込み合計）</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-total" min="0" placeholder="0" value="${p.total || 0}" required>
+            <input type="number" class="form-control bg-light" id="edit-total" min="0" placeholder="0" readonly>
           </div>
         </div>
 
@@ -1278,6 +1278,8 @@ function recalcEditFinalTotal() {
   const subtotal   = editReceiptItems.reduce((s, it) => s + Math.round(Number(it.subtotal || it.unitPrice) || 0), 0);
   const discount   = Number(document.getElementById("edit-discount")?.value) || 0;
   const finalTotal = Math.max(0, subtotal - discount);
+  const elTotal = document.getElementById("edit-total");
+  if (elTotal) elTotal.value = subtotal;
   const el = document.getElementById("edit-final-total");
   if (el) el.value = finalTotal;
 
