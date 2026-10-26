@@ -10,7 +10,10 @@ function yen(n) {
 
 // 品目名の表記ゆれ（空白の有無・全角半角など）を吸収して比較するための正規化
 function normalizeItemName(s) {
-  return String(s || "").replace(/[\s　]+/g, "");
+  return String(s || "")
+    .replace(/[\s　]+/g, "")
+    // 「焼き込み」⇔「焼きこみ」のような送り仮名・漢字表記ゆれを吸収する
+    .replace(/込/g, "こ");
 }
 
 // 合計(１)＝各種売上（調理パン・焼きこみ・菓子パン・デニッシュ・フランスパン・ブレッド・
