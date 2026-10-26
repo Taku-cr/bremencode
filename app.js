@@ -536,7 +536,6 @@ function applyAnalysisToForm(data) {
   if (data.payment?.txCount)           document.getElementById("f-tx-count").value             = data.payment.txCount;
   if (data.payment?.cumulativeSales)   document.getElementById("f-cumulative-sales").value      = data.payment.cumulativeSales;
   if (data.payment?.cashSales != null)    document.getElementById("f-cash-sales").value        = data.payment.cashSales;
-  if (data.payment?.total2 != null)       document.getElementById("f-total2").value            = data.payment.total2;
   if (data.payment?.cashBalance != null)  document.getElementById("f-register-balance").value  = data.payment.cashBalance;
 
   if (data.payment?.cashIn)  { incomeItems.push({ name: "入金", amount: data.payment.cashIn }); renderCash("income"); }
@@ -617,9 +616,18 @@ function recalcTotals() {
   const txCount = Number(document.getElementById("f-tx-count")?.value) || 0;
   document.getElementById("f-customer-unit-price").value = txCount > 0 ? Math.round(finalTotal / txCount) : "";
 
+  updateTotal2();
   updateCashBalance();
 }
 function removeItem(i) { receiptItems.splice(i, 1); renderItems(); }
+
+// 合計（２）＝信計売上＋現金売上
+function updateTotal2() {
+  const cum  = Number(document.getElementById("f-cumulative-sales")?.value) || 0;
+  const cash = Number(document.getElementById("f-cash-sales")?.value)       || 0;
+  const el = document.getElementById("f-total2");
+  if (el) el.value = cum + cash;
+}
 
 // ============================================================
 // 入金 / 出金
@@ -971,6 +979,10 @@ function renderTxDetailView(tx) {
   // 客単価＝値引き後の合計／取引数
   const txCount      = tx.payment?.txCount || 0;
   const cup          = txCount > 0 ? Math.round(finalTotal / txCount) : null;
+  // 合計（２）＝信計売上＋現金売上
+  const total2       = (tx.payment?.cumulativeSales != null || tx.payment?.cashSales != null)
+    ? (tx.payment?.cumulativeSales || 0) + (tx.payment?.cashSales || 0)
+    : null;
   const body         = document.getElementById("modal-tx-body");
 
   body.innerHTML = `
@@ -990,7 +1002,7 @@ function renderTxDetailView(tx) {
           <tr><td class="text-muted">客単価</td><td>${cup != null ? fmtCurrency(cup) : "--"}</td></tr>
           <tr><td class="text-muted">信計売上</td><td>${tx.payment?.cumulativeSales != null ? fmtCurrency(tx.payment.cumulativeSales) : "--"}</td></tr>
           <tr><td class="text-muted">現金売上</td><td>${tx.payment?.cashSales != null ? fmtCurrency(tx.payment.cashSales) : "--"}</td></tr>
-          <tr><td class="text-muted">合計（２）</td><td>${tx.payment?.total2 != null ? fmtCurrency(tx.payment.total2) : "--"}</td></tr>
+          <tr><td class="text-muted">合計（２）</td><td>${total2 != null ? fmtCurrency(total2) : "--"}</td></tr>
           <tr><td class="text-muted">合計（３）理論在高</td><td>${tx.payment?.cashBalance != null ? fmtCurrency(tx.payment.cashBalance) : "--"}</td></tr>
           <tr><td class="text-muted text-danger">出金合計</td><td class="text-danger">${expenseTotal ? `-${fmtCurrency(expenseTotal)}` : "--"}</td></tr>
           <tr><td class="fw-bold text-primary">現金残高</td><td class="fw-bold text-primary">${fmtCurrency(cashBalance)}</td></tr>
@@ -1153,21 +1165,21 @@ function renderTxEditForm(tx) {
           <label class="form-label small fw-bold">信計売上</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-cumsales" min="0" placeholder="0" value="${p.cumulativeSales ?? ""}" oninput="updateEditCashBalance()">
+            <input type="number" class="form-control" id="edit-cumsales" min="0" placeholder="0" value="${p.cumulativeSales ?? ""}" oninput="updateEditTotal2(); updateEditCashBalance()">
           </div>
         </div>
         <div class="col-6 col-md-4">
           <label class="form-label small fw-bold">現金売上</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}">
+            <input type="number" class="form-control" id="edit-cashsales" min="0" placeholder="0" value="${p.cashSales ?? ""}" oninput="updateEditTotal2()">
           </div>
         </div>
         <div class="col-6 col-md-4">
           <label class="form-label small fw-bold">合計（２）</label>
           <div class="input-group">
             <span class="input-group-text">¥</span>
-            <input type="number" class="form-control" id="edit-total2" min="0" placeholder="0" value="${p.total2 ?? ""}">
+            <input type="number" class="form-control bg-light" id="edit-total2" min="0" placeholder="0" readonly>
           </div>
         </div>
         <div class="col-12 col-md-4">
@@ -1296,7 +1308,15 @@ function recalcEditFinalTotal() {
   const elCup = document.getElementById("edit-cup");
   if (elCup) elCup.value = txCount > 0 ? Math.round(finalTotal / txCount) : "";
 
+  updateEditTotal2();
   updateEditCashBalance();
+}
+// 合計（２）＝信計売上＋現金売上
+function updateEditTotal2() {
+  const cum  = Number(document.getElementById("edit-cumsales")?.value)  || 0;
+  const cash = Number(document.getElementById("edit-cashsales")?.value) || 0;
+  const el = document.getElementById("edit-total2");
+  if (el) el.value = cum + cash;
 }
 function updateEditCashBalance() {
   const finalTotal      = Number(document.getElementById("edit-final-total")?.value)   || 0;
