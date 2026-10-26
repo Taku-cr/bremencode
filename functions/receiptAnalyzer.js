@@ -120,7 +120,7 @@ async function runReceiptAnalysis(imageParts) {
   const store  = parsed.store || { name: "", address: null, phone: null };
 
   return {
-    receiptDate: parsed.receiptDate  || todayStr(),
+    receiptDate: withCurrentYear(parsed.receiptDate),
     store,
     items:       parsed.items        || [],
     payment: {
@@ -146,6 +146,19 @@ async function analyzeReceiptImageBuffer(buffer, mimeType) {
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];
+}
+
+// レシートの日付の年は、読み取り結果に関係なく常に今年（日本時間）にする。
+// OCRが年を誤読しても（2006・2020・2023など）そのまま保存されないようにするためで、
+// 年を変えるのは人が手で行う。レシートから採用するのは月日だけ。
+function withCurrentYear(dateStr) {
+  const year = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
+  if (!m) return todayStr();
+  const mm = Number(m[1]), dd = Number(m[2]);
+  const d  = new Date(Date.UTC(year, mm - 1, dd));
+  if (d.getUTCMonth() !== mm - 1 || d.getUTCDate() !== dd) return todayStr();
+  return `${year}-${m[1]}-${m[2]}`;
 }
 
 const INVOICE_PROMPT = `この請求書画像を解析して、以下のJSON形式で情報を抽出してください。
@@ -209,4 +222,4 @@ async function analyzeInvoiceImage(imageUrls) {
   };
 }
 
-module.exports = { analyzeReceiptImage, analyzeReceiptImageBuffer, analyzeInvoiceImage, categoryFromStoreName };
+module.exports = { analyzeReceiptImage, analyzeReceiptImageBuffer, analyzeInvoiceImage, categoryFromStoreName, withCurrentYear };
