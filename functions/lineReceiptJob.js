@@ -3,6 +3,7 @@ const admin  = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 const { replyText, pushText, downloadLineContent } = require("./lineClient");
 const { analyzeReceiptImageBuffer }     = require("./receiptAnalyzer");
+const { matchBremenName, normalizeBremenItems, BREMEN_ITEM_NAMES } = require("./bremenItems");
 
 function yen(n) {
   return `¥${Number(n || 0).toLocaleString()}`;
@@ -11,6 +12,7 @@ function yen(n) {
 // 品目名の表記ゆれ（空白の有無・全角半角など）を吸収して比較するための正規化
 function normalizeItemName(s) {
   return String(s || "")
+    .normalize("NFKC")
     .replace(/[\s　]+/g, "")
     // 「焼き込み」⇔「焼きこみ」のような送り仮名・漢字表記ゆれを吸収する
     .replace(/込/g, "こ");
@@ -60,7 +62,18 @@ function formatReceiptSummary(a, issues) {
     lines.push("");
     lines.push("部門・個数・金額:");
     for (const it of a.items) {
-      lines.push(`・${it.name}　${it.quantity ?? "-"}個　${yen(it.subtotal)}`);
+      lines.push(`・${it.name || "（品名なし）"}　${it.quantity ?? "-"}個　${yen(it.subtotal)}`);
+    }
+    // 品名は11種類に限られるため、読み取った名前を直した明細を知らせる
+    if (a.__nameChanges?.length) {
+      lines.push("");
+      lines.push("品名を11種類に合わせました:");
+      a.__nameChanges.forEach(c => lines.push(
+        c.to
+          ? `・${c.no}番目「${c.from}」→「${c.to}」（並び順から判断）`
+          : `・${c.no}番目「${c.from}」→ 空欄（アプリで品名を選んでください）`
+      ));
+      lines.push("違っていればアプリの「取引一覧」から直せます。");
     }
   }
   lines.push("");
@@ -295,6 +308,8 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
   const expenses = (tx.expenses || []).map(it => ({ ...it }));
   const payment  = { ...(tx.payment || {}) };
   const applied  = [];
+  const rejected = [];
+  const isCote   = tx.category === "cote_a_cote";
 
   corrections.forEach(({ name, amount }) => {
     const field = CORRECTION_FIELD_ALIASES[name];
@@ -307,17 +322,35 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
     // （OCRが読み取った品目名とLINEで打った名前が微妙に違うだけで新規明細が
     // 量産されてしまい、本来直したかった金額がいつまでも直らない不具合があったため）
     const target = normalizeItemName(name);
+    // Bremenの品名は11種類だけ。入力が候補の表記ゆれ（「焼き込み」など）なら正式な品名に直して探す
+    const canon = isCote ? null : matchBremenName(name);
     const item = items.find(it => it.name === name)
       || items.find(it => normalizeItemName(it.name) === target)
+      || (canon && items.find(it => it.name === canon))
       || items.find(it => target && normalizeItemName(it.name).includes(target));
     if (item) {
       item.subtotal = amount;
       applied.push(`${item.name}（明細） → ${yen(amount)}`);
-    } else {
+    } else if (isCote) {
       items.push({ name, quantity: 1, unitPrice: amount, subtotal: amount, category: "other" });
       applied.push(`${name}（新規の明細として追加） → ${yen(amount)}`);
+    } else if (canon) {
+      items.push({ name: canon, quantity: 1, unitPrice: amount, subtotal: amount, category: "other" });
+      applied.push(`${canon}（新規の明細として追加） → ${yen(amount)}`);
+    } else {
+      // 11種類にない品名は新しい明細として入れない
+      rejected.push(name);
     }
   });
+
+  const rejectedNote = rejected.length
+    ? `\n\n次は品名にないため反映していません:\n${rejected.map(n => `・${n}`).join("\n")}\n品名は次のいずれかです: ${BREMEN_ITEM_NAMES.join("・")}`
+    : "";
+  if (!applied.length) {
+    // 反映できるものが1つも無いときは、取引を更新せずに案内だけ返す（対話は続ける）
+    await replyText(replyToken, `修正できる項目がありませんでした。${rejectedNote}\n\n「対象 金額」の形式で送ってください（例: 焼き菓子 1200）。「終了」で終われます。`);
+    return true;
+  }
 
   const issues = checkConsistency({ items, payment, income, expenses });
   await txRef.update({
@@ -332,13 +365,13 @@ async function handleCorrectionDialogReply(lineUserId, text, replyToken) {
     await ref.delete();
     const msg = await startPendingExpenseIfAny(
       lineUserId, dialog,
-      `修正しました:\n${appliedList}\n\n✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。`
+      `修正しました:\n${appliedList}${rejectedNote}\n\n✅ 金額の整合性チェック: 問題ありませんでした。取引を確定しました。`
     );
     await replyText(replyToken, msg);
   } else {
     await ref.update({ updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     await replyText(replyToken,
-      `修正しました:\n${appliedList}\n\n⚠️ まだ不整合があります:\n${issues.map(i => `・${i}`).join("\n")}\n\n引き続き「対象 金額」で修正するか、「終了」で終えられます。`
+      `修正しました:\n${appliedList}${rejectedNote}\n\n⚠️ まだ不整合があります:\n${issues.map(i => `・${i}`).join("\n")}\n\n引き続き「対象 金額」で修正するか、「終了」で終えられます。`
     );
   }
   return true;
@@ -367,6 +400,12 @@ async function processLineReceiptJob(job) {
     let resultMessage;
     try {
       analysis = await analyzeReceiptImageBuffer(buffer, finalContentType);
+      // Bremenの品名は11種類だけにする（読み取れない名前が保存データに入らないように）
+      if (analysis.category !== "cote_a_cote") {
+        const normalized = normalizeBremenItems(analysis.items);
+        analysis.items = normalized.items;
+        analysis.__nameChanges = normalized.changes;
+      }
       const issues = checkConsistency(analysis);
       resultMessage = formatReceiptSummary(analysis, issues);
       analysis.__issues = issues; // 保存時に再利用（同じチェックを二度計算しない）

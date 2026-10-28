@@ -612,7 +612,7 @@ function renderItems() {
     return `
     <tr>
       <td>
-        ${renderItemNameField(item.name, item.rawName, `updateItem(${i},'name',this.value)`, isBremen)}
+        ${renderItemNameField(item.name, item.rawName || item.ocrName, `updateItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="1"
@@ -1322,7 +1322,7 @@ function renderEditItems() {
   el.innerHTML = editReceiptItems.map((item, i) => `
     <tr>
       <td>
-        ${renderItemNameField(item.name, item.rawName, `updateEditItem(${i},'name',this.value)`, isBremen)}
+        ${renderItemNameField(item.name, item.rawName || item.ocrName, `updateEditItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="0"
