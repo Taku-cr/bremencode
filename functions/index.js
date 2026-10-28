@@ -6,6 +6,7 @@ const { analyzeReceiptImage, analyzeInvoiceImage } = require("./receiptAnalyzer"
 const { getWeatherByCoords, getWeatherByCity }      = require("./weatherService");
 const { handleLineWebhook }               = require("./lineWebhook");
 const { processLineReceiptJob }           = require("./lineReceiptJob");
+const { uploadReceiptToDrive }            = require("./driveUploader");
 
 admin.initializeApp();
 setGlobalOptions({ region: "asia-northeast1" });
@@ -126,5 +127,26 @@ exports.onLineReceiptJobCreated = onDocumentCreated(
   { document: "lineJobs/{jobId}", timeoutSeconds: 120, memory: "512MiB" },
   async (event) => {
     await processLineReceiptJob(event.data.data());
+  }
+);
+
+// --------------------------------------------------------
+// onTransactionCreatedSaveReceiptToDrive
+//   transactions/{txId} 作成をトリガーに、レシート画像をGoogleドライブの指定フォルダへコピーする
+//   （LINE取り込み・アプリからの追加どちらも対象。失敗しても取引の保存自体には影響しない）
+// --------------------------------------------------------
+exports.onTransactionCreatedSaveReceiptToDrive = onDocumentCreated(
+  { document: "transactions/{txId}", timeoutSeconds: 120, memory: "512MiB" },
+  async (event) => {
+    const txId = event.params.txId;
+    try {
+      await uploadReceiptToDrive(txId);
+    } catch (e) {
+      console.error("ドライブへの保存でエラー:", txId, e.message);
+      // 失敗したことが後から分かるよう取引に記録する（無限に再試行しないため、イベントの再実行はしない）
+      await admin.firestore().collection("transactions").doc(txId)
+        .update({ "receipt.driveError": String(e.message).slice(0, 300) })
+        .catch(() => {});
+    }
   }
 );
