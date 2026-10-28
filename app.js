@@ -560,20 +560,42 @@ document.getElementById("btn-add-item").addEventListener("click", () => {
   renderItems();
 });
 
-// カテゴリがBremenのときは品名の候補が決まっているため<select>に、それ以外は自由入力の<input>にする。
-// 既存の品名が候補に無い場合は選択肢に残して、表示を切り替えても値が消えないようにする。
-function renderItemNameField(name, onchangeExpr, isBremen) {
+// 読み取った品名をBremenの候補（11種類）に照合する。半角カナ・空白・「込」と「こ」の違いは同じものとして扱う。
+// 候補に当てはまらない（読み取れない）ものはnullを返す。
+function matchBremenName(name) {
+  const norm = s => String(s || "").normalize("NFKC").replace(/[\s　]+/g, "").replace(/込/g, "こ");
+  const n = norm(name);
+  if (!n) return null;
+  return BREMEN_ITEM_NAMES.find(c => norm(c) === n) || null;
+}
+
+// カテゴリがBremenの間は、品名を11種類のどれかだけにする。候補に当てはまらない品名は空欄にして、
+// 元の文字はrawNameに退避する（赤っぽい色で「未選択」と分かるようにし、手で選んでもらう）。
+// cote a coteに切り替えたときはrawNameから元の品名に戻す。
+function applyItemNameMode(items, isBremen) {
+  items.forEach(it => {
+    if (isBremen) {
+      const canon = matchBremenName(it.name);
+      if (canon)         { it.name = canon; delete it.rawName; }
+      else if (it.name)  { it.rawName = it.name; it.name = ""; }
+    } else if (!it.name && it.rawName) {
+      it.name = it.rawName; delete it.rawName;
+    }
+  });
+}
+
+// カテゴリがBremenのときは品名を11種類から選ぶ<select>に、それ以外は自由入力の<input>にする。
+function renderItemNameField(name, rawName, onchangeExpr, isBremen) {
   if (!isBremen) {
     return `<input type="text" class="form-control form-control-sm item-name-input" placeholder="品名"
       value="${esc(name)}" oninput="${onchangeExpr}">`;
   }
-  const extra = name && !BREMEN_ITEM_NAMES.includes(name)
-    ? `<option value="${esc(name)}" selected>${esc(name)}</option>` : "";
+  const unread = !name && rawName;
   return `
-    <select class="form-select form-select-sm item-name-input" onchange="${onchangeExpr}">
-      <option value="">選択してください</option>
+    <select class="form-select form-select-sm item-name-input${unread ? " item-name-unread" : ""}"
+      onchange="${onchangeExpr}; this.classList.remove('item-name-unread')">
+      <option value="">${unread ? `選択してください（読み取り: ${esc(rawName)}）` : "選択してください"}</option>
       ${BREMEN_ITEM_NAMES.map(n => `<option value="${n}" ${name === n ? "selected" : ""}>${n}</option>`).join("")}
-      ${extra}
     </select>`;
 }
 
@@ -584,12 +606,13 @@ function renderItems() {
   const el = document.getElementById("items-container");
   if (!receiptItems.length) { el.innerHTML = ""; return; }
   const isBremen = document.getElementById("f-category")?.value === "bremen";
+  applyItemNameMode(receiptItems, isBremen);
   el.innerHTML = receiptItems.map((item, i) => {
     const amount = Math.round(item.subtotal || item.unitPrice || 0);
     return `
     <tr>
       <td>
-        ${renderItemNameField(item.name, `updateItem(${i},'name',this.value)`, isBremen)}
+        ${renderItemNameField(item.name, item.rawName, `updateItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="1"
@@ -615,6 +638,7 @@ function renderItems() {
 // （単価欄は無いので、数量を直すたびに金額が 数量×0＝0 で上書きされ、保存データの金額が消えていた）
 function updateItem(i, field, val) {
   receiptItems[i][field] = val;
+  if (field === "name" && val) delete receiptItems[i].rawName;
   recalcTotals();
 }
 
@@ -820,7 +844,7 @@ document.getElementById("receipt-form").addEventListener("submit", async e => {
         address: "",
         phone:   ""
       },
-      items:    receiptItems.map(i => ({ ...i })),
+      items:    receiptItems.map(({ rawName, ...i }) => i), // 読み取れず空欄のままの品名は、空欄で保存する
       income:   incomeItems.filter(r => r.name || r.amount),
       expenses: expenseItems.filter(r => r.name || r.amount),
       payment: {
@@ -1286,6 +1310,7 @@ function addEditItem() {
 function removeEditItem(i) { editReceiptItems.splice(i, 1); renderEditItems(); }
 function updateEditItem(i, field, val) {
   editReceiptItems[i][field] = val;
+  if (field === "name" && val) delete editReceiptItems[i].rawName;
   recalcEditItemTotals();
 }
 // スマートフォンでも横スクロール（table-responsive）で全列を見られるよう、
@@ -1293,10 +1318,11 @@ function updateEditItem(i, field, val) {
 function renderEditItems() {
   const el = document.getElementById("edit-items-container");
   const isBremen = document.getElementById("edit-category")?.value === "bremen";
+  applyItemNameMode(editReceiptItems, isBremen);
   el.innerHTML = editReceiptItems.map((item, i) => `
     <tr>
       <td>
-        ${renderItemNameField(item.name, `updateEditItem(${i},'name',this.value)`, isBremen)}
+        ${renderItemNameField(item.name, item.rawName, `updateEditItem(${i},'name',this.value)`, isBremen)}
       </td>
       <td>
         <input type="number" class="form-control form-control-sm item-qty-input" placeholder="数量" min="0"
@@ -1450,7 +1476,8 @@ document.getElementById("btn-save-tx").addEventListener("click", async () => {
   const update = {
     receiptDate: date,
     store:    { ...(activeTx.store || {}), name: document.getElementById("edit-store").value.trim() },
-    items:    editReceiptItems.map(i => ({ ...i })),
+    // 候補外の品名が空欄＋色付きで出ていて、選び直さなかった明細は、元の品名を消さずにそのまま残す
+    items:    editReceiptItems.map(({ rawName, ...i }) => ({ ...i, name: i.name || rawName || "" })),
     category: document.getElementById("edit-category").value,
     payment: {
       ...(activeTx.payment || {}),

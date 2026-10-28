@@ -82,6 +82,10 @@
       -moz-appearance: textfield;
       appearance: textfield;
     }
+    /* 品名が11種類のどれにも当てはまらず空欄になっている明細（手で選んでもらう） */
+    select.item-name-unread {
+      background-color: #ffe0b2; border-color: #fb8c00; color: #bf360c; font-weight: 600;
+    }
     .badge-weather {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: .78rem; padding: 2px 8px; border-radius: 12px;
