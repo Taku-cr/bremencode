@@ -1566,7 +1566,9 @@ function applySalesTplStyle(cell, row, col) {
   cell.font = { name: "游ゴシック", family: 3, charset: 128, size: s.z, bold: !!s.b };
   if (s.f)    cell.numFmt = s.f;
   if (s.fill) cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + s.fill } };
-  if (s.al)   cell.alignment = { horizontal: s.al[0] || undefined, vertical: s.al[1] || undefined };
+  // 見やすさのため、縦位置は全セル中央にそろえ、見出し行（2行目）は折り返して中央寄せにする
+  const isHeader = row === 2;
+  cell.alignment = { horizontal: isHeader ? "center" : (s.al?.[0] || undefined), vertical: "middle", wrapText: isHeader };
   if (s.bd) {
     const side = k => s.bd[k] ? { style: "thin", color: { argb: s.bd[k] === "G" ? "FF008000" : "FF000000" } } : undefined;
     cell.border = { top: side("t"), bottom: side("b"), left: side("l"), right: side("r") };
@@ -1706,10 +1708,11 @@ async function exportToExcel() {
         set(9,  d?.has ? d.totalSales : null);
         set(10, d?.has && d.nonDoshishaInc ? d.nonDoshishaInc : null);
         set(11, d?.has && d.doshisha ? d.doshisha : null);
-        // L・Zは行内の式にしておき、後から手で直しても合計が追従するようにする
+        // L（売上＋入金＋入金(同志社)）とZ（値引き〜その他の合計）。
+        // 式にするとExcelが「隣接セルを除外している」と緑の三角印を各セルに出して見にくいため、値で入れる
         if (d?.has) {
-          ws.getCell(r, 12).value = { formula: `SUM(I${r}:K${r})`, result: d.lTotal };
-          ws.getCell(r, 26).value = { formula: `SUM(N${r}:Y${r})`, result: d.zTotal };
+          ws.getCell(r, 12).value = d.lTotal;
+          ws.getCell(r, 26).value = d.zTotal;
         }
         set(13, d?.hasAny ? d.mTotal : null);
         set(14, d?.has && d.discount ? -d.discount : null);
@@ -1749,6 +1752,13 @@ async function exportToExcel() {
       for (let r = 1; r <= LEGEND_ROW; r++) {
         for (let c = 1; c <= 26; c++) applySalesTplStyle(ws.getCell(r, c), r, c);
       }
+
+      // 見やすさ: 行の高さを明示（既定のままだと游ゴシックの数字の上が欠けるため）、
+      // 長い見出しは折り返して全文が見えるようにし、月日・曜日と見出し行は横にスクロールしても固定する
+      ws.getRow(1).height = 22;
+      ws.getRow(2).height = 84;
+      for (let r = FIRST_ROW; r <= LEGEND_ROW; r++) ws.getRow(r).height = 22;
+      ws.views = [{ state: "frozen", xSplit: 3, ySplit: 2 }];
     });
 
   const buffer = await wb.xlsx.writeBuffer();
