@@ -1595,7 +1595,9 @@ function applySalesTplStyle(cell, row, col) {
   if (s.fill) cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + s.fill } };
   // 見やすさのため、縦位置は全セル中央にそろえ、見出し行（2行目）は折り返して中央寄せにする
   const isHeader = row === 2;
-  cell.alignment = { horizontal: isHeader ? "center" : (s.al?.[0] || undefined), vertical: "middle", wrapText: isHeader };
+  // 数値の列（F〜Z）は、万一列幅を超えても見切れたり「####」になったりせず、文字を縮めて収める
+  const isNumber = row >= 3 && row <= 34 && col >= 6;
+  cell.alignment = { horizontal: isHeader ? "center" : (s.al?.[0] || undefined), vertical: "middle", wrapText: isHeader, shrinkToFit: isNumber };
   if (s.bd) {
     const side = k => s.bd[k] ? { style: "thin", color: { argb: s.bd[k] === "G" ? "FF008000" : "FF000000" } } : undefined;
     cell.border = { top: side("t"), bottom: side("b"), left: side("l"), right: side("r") };
@@ -1647,7 +1649,8 @@ async function exportToExcel() {
     .forEach(({ start, end, sheetName }) => {
       const ws = wb.addWorksheet(sheetName);
 
-      const widths = [7, 6, 3, 14, 16, 10, 9, 10, 13, 10, 12, 16, 16, 10, 11, 11, 11, 11, 13, 11, 11, 11, 11, 12, 11, 15];
+      // 数字が見切れない（####にならない）よう、最大の月間計（7桁・マイナス含む）でも余裕のある幅にする
+      const widths = [8, 7, 3, 15, 18, 11, 11, 11, 15, 12, 14, 17, 17, 13, 13, 13, 13, 13, 15, 13, 13, 13, 13, 14, 13, 17];
       widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
       ws.properties.defaultRowHeight = 18;
 
